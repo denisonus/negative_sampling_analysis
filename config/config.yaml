@@ -1,0 +1,40 @@
+# Dataset
+seed: 42
+dataset: 'ml-100k'
+data_path: 'dataset/'
+
+# Model
+embedding_size: 64
+hidden_size: 128
+num_layers: 2
+dropout: 0.1
+
+# Training
+epochs: 50
+train_batch_size: 1024
+learning_rate: 0.001
+weight_decay: 0.0001
+patience: 10
+
+# Negative sampling - general
+num_neg_samples: 4
+candidate_pool_size: 100
+
+# Hard/Mixed negative sampling
+hard_neg_ratio: 0.5
+
+# DNS (Dynamic Negative Sampling)
+dns_temperature: 1.0
+
+# Curriculum learning
+curriculum_start_ratio: 0.0    # Start with all random negatives
+curriculum_end_ratio: 0.8      # End with 80% hard negatives
+curriculum_warmup_epochs: 10   # Epochs to transition
+
+# Evaluation
+metrics: ['Recall', 'NDCG', 'MRR', 'Hit']
+topk: [5, 10, 20]
+valid_metric: 'NDCG@10'
+
+# Device: 'auto', 'mps', 'cuda', or 'cpu'
+device: 'auto'
