@@ -26,7 +26,6 @@ class Trainer:
             self.optimizer, mode='max', factor=0.5, patience=5
         )
         
-        self.loss_type = config.get('loss_type', 'softmax')
         self.train_losses = []
         self.valid_metrics = []
         
@@ -62,10 +61,7 @@ class Trainer:
             train_start = time.time()
             self.optimizer.zero_grad()
             
-            if self.loss_type == 'bpr':
-                loss = self.model.compute_bpr_loss(user_ids, pos_item_ids, neg_item_ids)
-            else:
-                loss = self.model.compute_loss(user_ids, pos_item_ids, neg_item_ids)
+            loss = self.model.compute_loss(user_ids, pos_item_ids, neg_item_ids)
             
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)

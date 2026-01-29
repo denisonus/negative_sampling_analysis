@@ -81,17 +81,6 @@ class TwoTowerModel(nn.Module):
         
         return F.cross_entropy(logits, labels)
     
-    def compute_bpr_loss(self, user_ids, pos_item_ids, neg_item_ids):
-        """Compute BPR (Bayesian Personalized Ranking) loss."""
-        user_emb = self.get_user_embedding(user_ids)
-        pos_item_emb = self.get_item_embedding(pos_item_ids)
-        neg_item_emb = self.get_item_embedding(neg_item_ids)
-        
-        pos_scores = torch.sum(user_emb * pos_item_emb, dim=-1, keepdim=True)
-        neg_scores = torch.bmm(neg_item_emb, user_emb.unsqueeze(-1)).squeeze(-1)
-        
-        return -torch.mean(F.logsigmoid(pos_scores - neg_scores))
-    
     def predict(self, user_ids, item_ids=None):
         """Predict scores for user-item pairs or all items."""
         user_emb = self.get_user_embedding(user_ids)
