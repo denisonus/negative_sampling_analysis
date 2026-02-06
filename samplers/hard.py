@@ -44,34 +44,52 @@ class HardNegativeSampler(NegativeSampler):
             raise ValueError("Model must be set before sampling hard negatives")
         
         batch_size = user_ids.size(0)
-        neg_items = torch.zeros(batch_size, self.num_neg_samples, dtype=torch.long)
+        neg_items = torch.zeros(batch_size, self.num_neg_samples, dtype=torch.long, device=self.device)
+        
+        # Generate candidate pools for all users at once
+        all_candidates, valid_counts = self._sample_candidate_pools_batch(user_ids)
         
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
+            # Get embeddings for all candidates at once
+            all_cand_emb = self.model.get_item_embedding(all_candidates.view(-1)).view(
+                batch_size, self.candidate_pool_size, -1
+            )
+            # Compute scores: (batch, 1, dim) @ (batch, dim, pool) -> (batch, 1, pool)
+            scores = torch.bmm(user_emb.unsqueeze(1), all_cand_emb.transpose(1, 2)).squeeze(1)
             
-            for i in range(batch_size):
-                user_id = user_ids[i].item()
-                positives = self._get_positives(user_id)
-                
-                # Generate candidate pool
-                candidates = self._sample_candidate_pool(positives)
-                candidates_tensor = torch.tensor(candidates, device=self.device)
-                
-                # Score candidates and select hardest
-                cand_emb = self.model.get_item_embedding(candidates_tensor)
-                scores = torch.matmul(user_emb[i:i+1], cand_emb.t()).squeeze(0)
-                
-                k = min(self.num_neg_samples, len(candidates))
-                _, top_indices = torch.topk(scores, k)
-                neg_items[i, :k] = candidates_tensor[top_indices]
+            # Select top-k for each user
+            k = min(self.num_neg_samples, self.candidate_pool_size)
+            _, top_indices = torch.topk(scores, k, dim=1)
+            neg_items[:, :k] = torch.gather(all_candidates, 1, top_indices)
         
-        return neg_items.to(self.device)
+        return neg_items
     
-    def _sample_candidate_pool(self, positives: Set[int]) -> list:
-        """Sample a pool of candidate negatives."""
-        candidates = []
-        while len(candidates) < self.candidate_pool_size:
-            c = np.random.randint(0, self.num_items)
-            if c not in positives:
-                candidates.append(c)
-        return candidates
+    def _sample_candidate_pools_batch(self, user_ids: torch.Tensor) -> tuple:
+        """Sample candidate pools for all users in batch."""
+        batch_size = user_ids.size(0)
+        oversample = self.candidate_pool_size + 50
+        candidates = np.random.randint(0, self.num_items, size=(batch_size, oversample))
+        
+        result = np.zeros((batch_size, self.candidate_pool_size), dtype=np.int64)
+        valid_counts = np.zeros(batch_size, dtype=np.int64)
+        user_ids_np = user_ids.cpu().numpy()
+        
+        for i in range(batch_size):
+            positives = self._get_positives(user_ids_np[i])
+            row = candidates[i]
+            mask = np.isin(row, list(positives), invert=True)
+            valid = row[mask]
+            count = min(len(valid), self.candidate_pool_size)
+            result[i, :count] = valid[:count]
+            valid_counts[i] = count
+            # Fill remaining with random if needed
+            if count < self.candidate_pool_size:
+                idx = count
+                while idx < self.candidate_pool_size:
+                    c = np.random.randint(0, self.num_items)
+                    if c not in positives:
+                        result[i, idx] = c
+                        idx += 1
+        
+        return torch.from_numpy(result).to(self.device), valid_counts

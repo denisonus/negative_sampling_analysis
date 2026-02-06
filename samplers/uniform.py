@@ -26,21 +26,30 @@ class UniformNegativeSampler(NegativeSampler):
     
     def sample(self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor) -> torch.Tensor:
         batch_size = user_ids.size(0)
-        neg_items = torch.zeros(batch_size, self.num_neg_samples, dtype=torch.long)
+        # Over-sample to account for filtering out positives
+        oversample = max(self.num_neg_samples * 3, self.num_neg_samples + 50)
+        candidates = np.random.randint(0, self.num_items, size=(batch_size, oversample))
+        
+        neg_items = np.zeros((batch_size, self.num_neg_samples), dtype=np.int64)
+        user_ids_np = user_ids.cpu().numpy()
         
         for i in range(batch_size):
-            user_id = user_ids[i].item()
-            positives = self._get_positives(user_id)
+            positives = self._get_positives(user_ids_np[i])
+            row = candidates[i]
+            # Vectorized filtering
+            mask = np.isin(row, list(positives), invert=True)
+            valid = row[mask]
             
-            neg_samples = []
-            while len(neg_samples) < self.num_neg_samples:
-                candidates = np.random.randint(0, self.num_items, size=self.num_neg_samples * 2)
-                for c in candidates:
+            if len(valid) >= self.num_neg_samples:
+                neg_items[i] = valid[:self.num_neg_samples]
+            else:
+                # Rare case: need more samples
+                neg_items[i, :len(valid)] = valid
+                idx = len(valid)
+                while idx < self.num_neg_samples:
+                    c = np.random.randint(0, self.num_items)
                     if c not in positives:
-                        neg_samples.append(c)
-                        if len(neg_samples) >= self.num_neg_samples:
-                            break
-            
-            neg_items[i] = torch.tensor(neg_samples[:self.num_neg_samples])
+                        neg_items[i, idx] = c
+                        idx += 1
         
-        return neg_items.to(self.device)
+        return torch.from_numpy(neg_items).to(self.device)
