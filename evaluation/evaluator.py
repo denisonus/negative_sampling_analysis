@@ -43,9 +43,7 @@ class Evaluator:
         self.metrics = [m.lower() for m in metrics]
         self.topk = topk
         self.max_k = max(topk)
-        self.device = (
-            device if isinstance(device, torch.device) else torch.device(device)
-        )
+        self.device = device
 
         mock_config = MockConfig(topk)
         self.metric_instances = {
@@ -59,38 +57,18 @@ class Evaluator:
         test_user_items = defaultdict(set)
 
         for batch in test_data:
-            if isinstance(batch, tuple) and len(batch) == 4:
-                # RecBole FullSortEvalDataLoader format:
-                # (interaction, row_idx, pos_len_list, user_idx)
-                interaction, row_idx, pos_len_list, user_idx = batch
-                if isinstance(row_idx, tuple) and len(row_idx) == 2:
-                    batch_indices, item_ids = row_idx
-                    user_ids = user_idx.cpu().numpy()  # actual user IDs
-                    batch_indices = batch_indices.cpu().numpy()
-                    item_ids = item_ids.cpu().numpy()
+            # RecBole FullSortEvalDataLoader format:
+            # (interaction, row_idx, pos_len_list, user_idx)
+            _, row_idx, _, user_idx = batch
+            batch_indices, item_ids = row_idx
+            user_ids = user_idx.cpu().numpy()
+            batch_indices = batch_indices.cpu().numpy()
+            item_ids = item_ids.cpu().numpy()
 
-                    for batch_idx, item_id in zip(batch_indices, item_ids):
-                        if batch_idx < len(user_ids):
-                            user_id = user_ids[batch_idx]
-                            test_user_items[int(user_id)].add(int(item_id))
-
-            elif isinstance(batch, tuple) and len(batch) == 2:
-                users, items = batch
-                users = users.cpu().numpy() if torch.is_tensor(users) else users
-                items = items.cpu().numpy() if torch.is_tensor(items) else items
-                for user, item in zip(users, items):
-                    test_user_items[int(user)].add(int(item))
-
-            elif hasattr(batch, "__getitem__"):
-                try:
-                    users = batch["user_id"]  # type: ignore[index]
-                    items = batch["item_id"]  # type: ignore[index]
-                    users = users.cpu().numpy() if torch.is_tensor(users) else users
-                    items = items.cpu().numpy() if torch.is_tensor(items) else items
-                    for user, item in zip(users, items):
-                        test_user_items[int(user)].add(int(item))
-                except (KeyError, TypeError):
-                    pass
+            for batch_idx, item_id in zip(batch_indices, item_ids):
+                if batch_idx < len(user_ids):
+                    user_id = user_ids[batch_idx]
+                    test_user_items[int(user_id)].add(int(item_id))
 
         return test_user_items
 

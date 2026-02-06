@@ -16,7 +16,7 @@ class Trainer:
         self.config = config
         self.device = device
         
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.AdamW(
             model.parameters(),
             lr=config.get('learning_rate', 0.001),
             weight_decay=config.get('weight_decay', 0.0001)
@@ -42,10 +42,8 @@ class Trainer:
         epoch_sampling_time = 0
         epoch_training_time = 0
         
-        if hasattr(self.sampler, 'set_epoch'):
-            self.sampler.set_epoch(epoch)
-        if hasattr(self.sampler, 'set_model'):
-            self.sampler.set_model(self.model)
+        self.sampler.set_epoch(epoch)
+        self.sampler.set_model(self.model)
         
         pbar = tqdm(train_loader, desc=f'Epoch {epoch}')
         for user_ids, pos_item_ids in pbar:
@@ -100,7 +98,7 @@ class Trainer:
             # Validation
             if valid_loader is not None and evaluator is not None:
                 metrics = evaluator.evaluate(self.model, valid_loader)
-                # Handle case-insensitive metric lookup
+                
                 valid_metric_name = self.config.get('valid_metric', 'ndcg@10').lower()
                 valid_metric = metrics.get(valid_metric_name, 0)
                 self.valid_metrics.append(valid_metric)
@@ -162,10 +160,7 @@ class InBatchTrainer(Trainer):
             item_emb = self.model.get_item_embedding(pos_item_ids)
             
             logits = torch.matmul(user_emb, item_emb.t())
-            if hasattr(self.model, 'temperature'):
-                logits = logits / self.model.temperature.clamp(min=0.01)
-            else:
-                logits = logits / 0.1
+            logits = logits / self.model.temperature.clamp(min=0.01)
             
             labels = torch.arange(batch_size, device=self.device)
             loss = torch.nn.functional.cross_entropy(logits, labels)

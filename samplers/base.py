@@ -36,6 +36,14 @@ class NegativeSampler(ABC):
             Tensor of negative item IDs (batch_size, num_neg_samples)
         """
         pass
+
+    def set_model(self, model: Any) -> None:
+        """Optional hook for samplers that need model access."""
+        return None
+
+    def set_epoch(self, epoch: int) -> None:
+        """Optional hook for samplers that need epoch context."""
+        return None
     
     def _get_positives(self, user_id: Any) -> Set[int]:
         """Get positive items for a user."""
