@@ -4,7 +4,6 @@ import numpy as np
 
 import torch
 from collections import defaultdict
-from tqdm import tqdm
 from recbole.evaluator.metrics import Hit, Recall, NDCG, MRR, Precision, MAP
 
 
@@ -85,25 +84,30 @@ class Evaluator:
         all_pos_index, all_pos_len = [], []
 
         with torch.no_grad():
-            for start_idx in tqdm(
-                range(0, len(users_list), batch_size), desc="Evaluating"
-            ):
+            # Pre-compute all item embeddings once
+            all_item_emb = model.get_all_item_embeddings()
+            
+            for start_idx in range(0, len(users_list), batch_size):
                 end_idx = min(start_idx + batch_size, len(users_list))
                 batch_users = users_list[start_idx:end_idx]
                 user_ids = torch.tensor(
                     batch_users, dtype=torch.long, device=self.device
                 )
 
-                scores = model.predict(user_ids)
+                scores = model.predict(user_ids, all_item_emb=all_item_emb)
 
-                # Mask training items
+                # Mask training items (vectorized)
                 for i, user in enumerate(batch_users):
                     mask_items = (train_mask or {}).get(
                         user, set()
                     ) | self.user_item_dict.get(user, set())
-                    for item in mask_items:
-                        if item < scores.size(1):
-                            scores[i, item] = float("-inf")
+                    if mask_items:
+                        mask_indices = torch.tensor(
+                            [item for item in mask_items if item < scores.size(1)],
+                            dtype=torch.long, device=scores.device
+                        )
+                        if len(mask_indices) > 0:
+                            scores[i, mask_indices] = float("-inf")
 
                 _, topk_idx = torch.topk(
                     scores, k=min(self.max_k, scores.size(1)), dim=1

@@ -57,7 +57,7 @@ class Trainer:
             
             # Time training step
             train_start = time.time()
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
             
             loss = self.model.compute_loss(user_ids, pos_item_ids, neg_item_ids)
             
@@ -165,7 +165,7 @@ class InBatchTrainer(Trainer):
             labels = torch.arange(batch_size, device=self.device)
             loss = torch.nn.functional.cross_entropy(logits, labels)
             
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()

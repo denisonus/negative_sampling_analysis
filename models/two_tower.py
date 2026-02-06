@@ -81,13 +81,24 @@ class TwoTowerModel(nn.Module):
         
         return F.cross_entropy(logits, labels)
     
-    def predict(self, user_ids, item_ids=None):
-        """Predict scores for user-item pairs or all items."""
+    def get_all_item_embeddings(self):
+        """Compute all item embeddings. Call once before evaluation."""
+        all_items = torch.arange(self.num_items, device=next(self.parameters()).device)
+        return self.get_item_embedding(all_items)
+    
+    def predict(self, user_ids, item_ids=None, all_item_emb=None):
+        """Predict scores for user-item pairs or all items.
+        
+        Args:
+            user_ids: User IDs to predict for
+            item_ids: Optional specific item IDs (if None, scores all items)
+            all_item_emb: Pre-computed item embeddings (optional, for efficiency)
+        """
         user_emb = self.get_user_embedding(user_ids)
         
         if item_ids is None:
-            all_items = torch.arange(self.num_items, device=user_ids.device)
-            all_item_emb = self.get_item_embedding(all_items)
+            if all_item_emb is None:
+                all_item_emb = self.get_all_item_embeddings()
             return torch.matmul(user_emb, all_item_emb.t())
         else:
             item_emb = self.get_item_embedding(item_ids)
