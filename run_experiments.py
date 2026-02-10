@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import random
 import argparse
+import warnings
 from datetime import datetime
 from scipy import stats
 
@@ -22,6 +23,8 @@ from utils import (
     InBatchTrainer,
 )
 from evaluation import Evaluator
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 def set_seed(seed):
