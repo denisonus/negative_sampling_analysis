@@ -20,13 +20,13 @@ def get_sampler(
     user_item_dict: Dict[int, Set[int]],
     item_popularity: Optional[Union[List[float], np.ndarray]] = None,
     model: Optional[EmbeddingModel] = None,
-    device: Device = 'cpu',
-    **kwargs
+    device: Device = "cpu",
+    **kwargs,
 ) -> NegativeSampler:
     """Factory function to create negative samplers.
-    
+
     Args:
-        strategy: Sampling strategy name ('uniform', 'popularity', 'hard', 
+        strategy: Sampling strategy name ('uniform', 'popularity', 'hard',
                   'mixed', 'in_batch', 'dns', 'curriculum')
         num_items: Total number of items
         num_neg_samples: Number of negative samples per user
@@ -35,62 +35,81 @@ def get_sampler(
         model: Model for computing embeddings (required for 'hard', 'dns', 'curriculum')
         device: Device for tensors
         **kwargs: Additional strategy-specific parameters
-        
+
     Returns:
         NegativeSampler instance
-        
+
     Raises:
         ValueError: If unknown strategy is specified
     """
     strategy = strategy.lower()
-    
-    if strategy == 'uniform':
-        return UniformNegativeSampler(num_items, num_neg_samples, user_item_dict, device)
-    
-    elif strategy == 'popularity':
+
+    if strategy == "uniform":
+        return UniformNegativeSampler(
+            num_items, num_neg_samples, user_item_dict, device
+        )
+
+    elif strategy == "popularity":
         if item_popularity is None:
             item_popularity = np.ones(num_items)
         return PopularityNegativeSampler(
-            num_items, num_neg_samples, user_item_dict,
-            item_popularity, device,
-            smoothing=kwargs.get('smoothing', 0.75)
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            item_popularity,
+            device,
+            smoothing=kwargs.get("smoothing", 0.75),
         )
-    
-    elif strategy == 'hard':
+
+    elif strategy == "hard":
         return HardNegativeSampler(
-            num_items, num_neg_samples, user_item_dict,
-            model, device,
-            candidate_pool_size=kwargs.get('candidate_pool_size', 100)
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            model,
+            device,
+            candidate_pool_size=kwargs.get("candidate_pool_size", 100),
         )
-    
-    elif strategy == 'mixed':
+
+    elif strategy == "mixed":
         return MixedNegativeSampler(
-            num_items, num_neg_samples, user_item_dict,
-            model, device,
-            hard_ratio=kwargs.get('hard_ratio', 0.5),
-            candidate_pool_size=kwargs.get('candidate_pool_size', 100)
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            model,
+            device,
+            hard_ratio=kwargs.get("hard_ratio", 0.5),
+            candidate_pool_size=kwargs.get("candidate_pool_size", 100),
         )
-    
-    elif strategy == 'in_batch':
-        return InBatchNegativeSampler(num_items, num_neg_samples, user_item_dict, device)
-    
-    elif strategy == 'dns':
+
+    elif strategy == "in_batch":
+        return InBatchNegativeSampler(
+            num_items, num_neg_samples, user_item_dict, device
+        )
+
+    elif strategy == "dns":
         return DNSNegativeSampler(
-            num_items, num_neg_samples, user_item_dict,
-            model, device,
-            candidate_pool_size=kwargs.get('candidate_pool_size', 100),
-            temperature=kwargs.get('dns_temperature', 1.0)
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            model,
+            device,
+            candidate_pool_size=kwargs.get("candidate_pool_size", 100),
+            temperature=kwargs.get("dns_temperature", 1.0),
         )
-    
-    elif strategy == 'curriculum':
+
+    elif strategy == "curriculum":
         return CurriculumNegativeSampler(
-            num_items, num_neg_samples, user_item_dict,
-            model, device,
-            candidate_pool_size=kwargs.get('candidate_pool_size', 100),
-            start_hard_ratio=kwargs.get('curriculum_start_ratio', 0.0),
-            end_hard_ratio=kwargs.get('curriculum_end_ratio', 0.8),
-            warmup_epochs=kwargs.get('curriculum_warmup_epochs', 10)
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            model,
+            device,
+            candidate_pool_size=kwargs.get("candidate_pool_size", 100),
+            start_hard_ratio=kwargs.get("curriculum_start_ratio", 0.0),
+            end_hard_ratio=kwargs.get("curriculum_end_ratio", 0.8),
+            warmup_epochs=kwargs.get("curriculum_warmup_epochs", 10),
         )
-    
+
     else:
         raise ValueError(f"Unknown sampling strategy: {strategy}")

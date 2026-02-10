@@ -86,7 +86,7 @@ class Evaluator:
         with torch.no_grad():
             # Pre-compute all item embeddings once
             all_item_emb = model.get_all_item_embeddings()
-            
+
             for start_idx in range(0, len(users_list), batch_size):
                 end_idx = min(start_idx + batch_size, len(users_list))
                 batch_users = users_list[start_idx:end_idx]
@@ -104,7 +104,8 @@ class Evaluator:
                     if mask_items:
                         mask_indices = torch.tensor(
                             [item for item in mask_items if item < scores.size(1)],
-                            dtype=torch.long, device=scores.device
+                            dtype=torch.long,
+                            device=scores.device,
                         )
                         if len(mask_indices) > 0:
                             scores[i, mask_indices] = float("-inf")
