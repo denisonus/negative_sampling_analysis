@@ -102,7 +102,6 @@ def run_experiment(config, sampling_strategy, device):
     )
 
     evaluator = Evaluator(
-        user_item_dict=user_item_dict,
         num_items=num_items,
         metrics=config.get("metrics", ["Recall", "NDCG", "MRR", "Hit"]),
         topk=config.get("topk", [5, 10, 20]),
@@ -124,7 +123,7 @@ def run_experiment(config, sampling_strategy, device):
     )
 
     print("\nFinal Test Evaluation...")
-    test_metrics = evaluator.evaluate(model, test_data, train_mask=user_item_dict)
+    test_metrics = evaluator.evaluate(model, test_data)
 
     print(f"\nTest Results for {sampling_strategy}:")
     for metric, value in sorted(test_metrics.items()):

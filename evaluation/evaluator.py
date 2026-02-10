@@ -31,13 +31,11 @@ class Evaluator:
 
     def __init__(
         self,
-        user_item_dict,
         num_items,
         metrics=["Recall", "NDCG", "MRR", "Hit"],
         topk=[5, 10, 20],
         device="cpu",
     ):
-        self.user_item_dict = user_item_dict
         self.num_items = num_items
         self.metrics = [m.lower() for m in metrics]
         self.topk = topk
@@ -54,30 +52,31 @@ class Evaluator:
     def _extract_interactions(self, test_data):
         """Extract user-item interactions from test data."""
         test_user_items = defaultdict(set)
+        uid2pos = test_data.uid2positive_item
+        uid_list = test_data.uid_list.numpy()
 
-        for batch in test_data:
-            # RecBole FullSortEvalDataLoader format:
-            # (interaction, row_idx, pos_len_list, user_idx)
-            _, row_idx, _, user_idx = batch
-            batch_indices, item_ids = row_idx
-            user_ids = user_idx.cpu().numpy()
-            batch_indices = batch_indices.cpu().numpy()
-            item_ids = item_ids.cpu().numpy()
-
-            for batch_idx, item_id in zip(batch_indices, item_ids):
-                if batch_idx < len(user_ids):
-                    user_id = user_ids[batch_idx]
-                    test_user_items[int(user_id)].add(int(item_id))
+        for uid in uid_list:
+            pos_items = uid2pos[uid]
+            if hasattr(pos_items, "tolist"):
+                test_user_items[int(uid)] = set(pos_items.tolist())
+            elif hasattr(pos_items, "__iter__"):
+                test_user_items[int(uid)] = set(int(i) for i in pos_items)
+            else:
+                test_user_items[int(uid)] = {int(pos_items)}
 
         return test_user_items
 
-    def evaluate(self, model, test_data, train_mask=None):
+    def evaluate(self, model, test_data):
         """Evaluate model on test data."""
         model.eval()
         test_user_items = self._extract_interactions(test_data)
 
         if not test_user_items:
             return {f"{m}@{k}": 0.0 for m in self.metrics for k in self.topk}
+
+        uid2history = (
+            test_data.uid2history_item if hasattr(test_data, "uid2history_item") else {}
+        )
 
         users_list = list(test_user_items.keys())
         batch_size = 256
@@ -96,14 +95,16 @@ class Evaluator:
 
                 scores = model.predict(user_ids, all_item_emb=all_item_emb)
 
-                # Mask training items (vectorized)
+                # Mask training history items
                 for i, user in enumerate(batch_users):
-                    mask_items = (train_mask or {}).get(
-                        user, set()
-                    ) | self.user_item_dict.get(user, set())
-                    if mask_items:
+                    history_items = uid2history[user] if user < len(uid2history) else []
+                    if hasattr(history_items, "__len__") and len(history_items) > 0:
                         mask_indices = torch.tensor(
-                            [item for item in mask_items if item < scores.size(1)],
+                            [
+                                int(item)
+                                for item in history_items
+                                if int(item) < scores.size(1)
+                            ],
                             dtype=torch.long,
                             device=scores.device,
                         )
