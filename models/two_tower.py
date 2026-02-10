@@ -80,8 +80,18 @@ class TwoTowerModel(nn.Module):
 
         return scores / self.temperature.clamp(min=0.01)
 
-    def compute_loss(self, user_ids, pos_item_ids, neg_item_ids):
-        """Compute contrastive loss (InfoNCE / Sampled Softmax)."""
+    def compute_loss(self, user_ids, pos_item_ids, neg_item_ids, neg_log_probs=None):
+        """Compute contrastive loss (InfoNCE / Sampled Softmax).
+
+        Args:
+            user_ids: User IDs tensor
+            pos_item_ids: Positive item IDs tensor
+            neg_item_ids: Negative item IDs tensor (batch_size, num_neg)
+            neg_log_probs: Optional log sampling probabilities for bias correction.
+                           Shape: (batch_size, num_neg). When provided, applies
+                           logQ correction: logits -= log(Q(neg)) to debias
+                           non-uniform sampling distributions.
+        """
         user_emb = self.get_user_embedding(user_ids)
         pos_item_emb = self.get_item_embedding(pos_item_ids)
         neg_item_emb = self.get_item_embedding(neg_item_ids)
@@ -89,9 +99,16 @@ class TwoTowerModel(nn.Module):
         pos_scores = torch.sum(user_emb * pos_item_emb, dim=-1, keepdim=True)
         neg_scores = torch.bmm(neg_item_emb, user_emb.unsqueeze(-1)).squeeze(-1)
 
+        # Temperature-scaled logits
         logits = torch.cat([pos_scores, neg_scores], dim=-1) / self.temperature.clamp(
             min=0.01
         )
+
+        # Apply logQ correction
+        if neg_log_probs is not None:
+            # Subtract log(Q) from negative logits only (index 1 onwards)
+            logits[:, 1:] = logits[:, 1:] - neg_log_probs
+
         labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)
 
         return F.cross_entropy(logits, labels)

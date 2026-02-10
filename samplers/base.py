@@ -2,10 +2,25 @@
 
 import torch
 from abc import ABC, abstractmethod
-from typing import Set, Dict, Union, Any
+from typing import Set, Dict, Union, Any, Optional
+from dataclasses import dataclass
 
 # Type alias for device
 Device = Union[str, torch.device]
+
+
+@dataclass
+class SamplingResult:
+    """Result of negative sampling with optional log probabilities for bias correction.
+
+    Attributes:
+        neg_items: Tensor of negative item IDs (batch_size, num_neg_samples)
+        log_probs: Optional tensor of log sampling probabilities (batch_size, num_neg_samples).
+                   Used for logQ correction in non-uniform sampling (e.g., popularity-based).
+    """
+
+    neg_items: torch.Tensor
+    log_probs: Optional[torch.Tensor] = None
 
 
 class NegativeSampler(ABC):
@@ -23,11 +38,12 @@ class NegativeSampler(ABC):
         self.user_item_dict = user_item_dict
         self.device = device
         self.name = "base"
+        self.return_probs = False
 
     @abstractmethod
     def sample(
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, SamplingResult]:
         """Sample negative items for given users.
 
         Args:
@@ -35,7 +51,8 @@ class NegativeSampler(ABC):
             pos_item_ids: Tensor of positive item IDs (batch_size,)
 
         Returns:
-            Tensor of negative item IDs (batch_size, num_neg_samples)
+            If return_probs is False: Tensor of negative item IDs (batch_size, num_neg_samples)
+            If return_probs is True: SamplingResult with neg_items and log_probs for bias correction
         """
         pass
 

@@ -4,15 +4,18 @@ import torch
 import numpy as np
 from typing import Set, Dict, List, Union
 
-from .base import NegativeSampler, Device
+from .base import NegativeSampler, Device, SamplingResult
 
 
 class PopularityNegativeSampler(NegativeSampler):
-    """Popularity-based negative sampling.
+    """Popularity-based negative sampling with optional bias correction.
 
     Samples negatives proportionally to item popularity (with smoothing).
     More popular items are more likely to be sampled as negatives,
     which provides harder negatives without requiring model inference.
+
+    Returns log sampling probabilities for logQ
+    correction, enabling unbiased gradient estimation.
     """
 
     def __init__(
@@ -33,10 +36,12 @@ class PopularityNegativeSampler(NegativeSampler):
             popularity + 1e-10, smoothing
         )  # Add small epsilon to avoid zero
         self.sampling_probs = popularity / popularity.sum()
+        # Pre-compute log probabilities for bias correction
+        self.log_sampling_probs = np.log(self.sampling_probs + 1e-10)
 
     def sample(
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> SamplingResult:
         batch_size = user_ids.size(0)
         # Over-sample to account for filtering out positives
         oversample = max(self.num_neg_samples * 3, self.num_neg_samples + 50)
@@ -69,4 +74,9 @@ class PopularityNegativeSampler(NegativeSampler):
                         neg_items[i, idx] = c
                         idx += 1
 
-        return torch.from_numpy(neg_items).to(self.device)
+        neg_items_tensor = torch.from_numpy(neg_items).to(self.device)
+
+        log_probs = (
+            torch.from_numpy(self.log_sampling_probs[neg_items]).float().to(self.device)
+        )
+        return SamplingResult(neg_items=neg_items_tensor, log_probs=log_probs)

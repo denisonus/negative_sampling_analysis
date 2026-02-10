@@ -6,6 +6,8 @@ import time
 from typing import Any, Union
 from tqdm import tqdm
 
+from samplers.base import SamplingResult
+
 
 class Trainer:
     """Trainer for Two-Tower model with customizable negative sampling."""
@@ -58,14 +60,27 @@ class Trainer:
 
             # Time negative sampling
             sample_start = time.time()
-            neg_item_ids = self.sampler.sample(user_ids, pos_item_ids).to(self.device)
+            sample_result = self.sampler.sample(user_ids, pos_item_ids)
+
+            # Handle both plain tensor and SamplingResult
+            if isinstance(sample_result, SamplingResult):
+                neg_item_ids = sample_result.neg_items.to(self.device)
+                neg_log_probs = sample_result.log_probs
+                if neg_log_probs is not None:
+                    neg_log_probs = neg_log_probs.to(self.device)
+            else:
+                neg_item_ids = sample_result.to(self.device)
+                neg_log_probs = None
+
             epoch_sampling_time += time.time() - sample_start
 
             # Time training step
             train_start = time.time()
             self.optimizer.zero_grad(set_to_none=True)
 
-            loss = self.model.compute_loss(user_ids, pos_item_ids, neg_item_ids)
+            loss = self.model.compute_loss(
+                user_ids, pos_item_ids, neg_item_ids, neg_log_probs
+            )
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)

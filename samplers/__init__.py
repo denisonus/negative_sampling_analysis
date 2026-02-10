@@ -1,6 +1,6 @@
 """Negative Sampling Strategies for Two-Tower Models."""
 
-from .base import NegativeSampler
+from .base import NegativeSampler, SamplingResult
 from .uniform import UniformNegativeSampler
 from .popularity import PopularityNegativeSampler
 from .hard import HardNegativeSampler, EmbeddingModel
@@ -12,6 +12,7 @@ from .factory import get_sampler
 
 __all__ = [
     'NegativeSampler',
+    'SamplingResult',
     'UniformNegativeSampler',
     'PopularityNegativeSampler',
     'HardNegativeSampler',
