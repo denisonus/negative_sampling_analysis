@@ -287,9 +287,13 @@ def save_results(all_results, output_dir="results"):
 
     # Save to JSON
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create timestamped folder for this experiment run
+    run_output_dir = os.path.join(output_dir, f"run_{timestamp}")
+    os.makedirs(run_output_dir, exist_ok=True)
 
     # Save detailed results
-    results_file = os.path.join(output_dir, f"results_{timestamp}.json")
+    results_file = os.path.join(run_output_dir, "results.json")
     save_data = {
         "statistics": stats_results,
         "raw_results": {
@@ -310,9 +314,20 @@ def save_results(all_results, output_dir="results"):
 
     with open(results_file, "w") as f:
         json.dump(save_data, f, indent=2)
-    print(f"\nResults saved to: {results_file}")
-
-    return stats_results
+    
+    # Save a metadata file with run information
+    metadata = {
+        "timestamp": timestamp,
+        "strategies": list(all_results.keys()),
+        "num_runs": len(list(all_results.values())[0]) if all_results else 0,
+        "results_file": "results.json"
+    }
+    metadata_file = os.path.join(run_output_dir, "metadata.json")
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"\nResults saved to: {run_output_dir}")
+    return stats_results, run_output_dir
 
 
 def main():
@@ -340,7 +355,8 @@ def main():
     )
 
     if all_results:
-        save_results(all_results, args.output)
+        stats_results, output_dir = save_results(all_results, args.output)
+        print(f"\n✓ Experiment complete! Results saved in: {output_dir}")
 
 
 if __name__ == "__main__":

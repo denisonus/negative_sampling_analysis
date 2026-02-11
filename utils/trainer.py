@@ -126,7 +126,11 @@ class Trainer:
                 valid_metric = metrics.get(valid_metric_name, 0)
                 self.valid_metrics.append(valid_metric)
 
-                print(f"  Validation: {metrics}")
+                # Log @10 metrics during training
+                metrics_at_10 = {
+                    k: f"{v:.4f}" for k, v in metrics.items() if "@10" in k
+                }
+                print(f"Validation: {metrics_at_10}")
 
                 # Learning rate scheduling
                 self.scheduler.step(valid_metric)

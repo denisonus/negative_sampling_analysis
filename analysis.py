@@ -1,5 +1,8 @@
 """Analysis and Visualization for experimental results."""
 
+import os
+import sys
+from datetime import datetime
 import json
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,20 +16,14 @@ def load_results(results_file):
 
 def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
     """Create bar chart comparing strategies on a specific metric."""
-    # Handle both old format and new format with statistics
-    if "statistics" in results:
-        stats_data = results["statistics"]
-        strategies = list(stats_data.keys())
-        values = [
-            stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
-        ]
-        errors = [
-            stats_data[s]["metrics"].get(metric, {}).get("std", 0) for s in strategies
-        ]
-    else:
-        strategies = list(results.keys())
-        values = [results[s]["test_metrics"].get(metric, 0) for s in strategies]
-        errors = None
+    stats_data = results["statistics"]
+    strategies = list(stats_data.keys())
+    values = [
+        stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
+    ]
+    errors = [
+        stats_data[s]["metrics"].get(metric, {}).get("std", 0) for s in strategies
+    ]
 
     plt.figure(figsize=(10, 6))
     bars = plt.bar(
@@ -35,7 +32,7 @@ def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
         color="steelblue",
         edgecolor="black",
         yerr=errors,
-        capsize=5 if errors else 0,
+        capsize=5,
     )
     bars[np.argmax(values)].set_color("forestgreen")
 
@@ -63,15 +60,8 @@ def plot_all_metrics(
     results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"], output_path=None
 ):
     """Create grouped bar chart comparing all metrics with error bars."""
-    # Handle both old format and new format with statistics
-    if "statistics" in results:
-        stats_data = results["statistics"]
-        strategies = list(stats_data.keys())
-        has_errors = True
-    else:
-        strategies = list(results.keys())
-        stats_data = None
-        has_errors = False
+    stats_data = results["statistics"]
+    strategies = list(stats_data.keys())
 
     n_strategies, n_metrics = len(strategies), len(metrics)
 
@@ -81,18 +71,12 @@ def plot_all_metrics(
     colors = plt.colormaps["Set2"](np.linspace(0, 1, n_metrics))
 
     for i, metric in enumerate(metrics):
-        if stats_data:
-            values = [
-                stats_data[s]["metrics"].get(metric, {}).get("mean", 0)
-                for s in strategies
-            ]
-            errors = [
-                stats_data[s]["metrics"].get(metric, {}).get("std", 0)
-                for s in strategies
-            ]
-        else:
-            values = [results[s]["test_metrics"].get(metric, 0) for s in strategies]
-            errors = None
+        values = [
+            stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
+        ]
+        errors = [
+            stats_data[s]["metrics"].get(metric, {}).get("std", 0) for s in strategies
+        ]
 
         offset = (i - n_metrics / 2 + 0.5) * width
         ax.bar(
@@ -101,8 +85,8 @@ def plot_all_metrics(
             width,
             label=metric,
             color=colors[i],
-            yerr=errors if has_errors else None,
-            capsize=3 if has_errors else 0,
+            yerr=errors,
+            capsize=3,
         )
 
     ax.set_xlabel("Sampling Strategy")
@@ -369,26 +353,15 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
 
 def create_latex_table(results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"]):
     """Create LaTeX table for paper with mean ± std."""
-    # Handle both old format and new format with statistics
-    if "statistics" in results:
-        stats_data = results["statistics"]
-        strategies = list(stats_data.keys())
-        has_std = True
-    else:
-        strategies = list(results.keys())
-        stats_data = None
-        has_std = False
+    stats_data = results["statistics"]
+    strategies = list(stats_data.keys())
 
     # Find best values for bolding
     best_values = {}
     for metric in metrics:
-        if stats_data:
-            values = [
-                stats_data[s]["metrics"].get(metric, {}).get("mean", 0)
-                for s in strategies
-            ]
-        else:
-            values = [results[s]["test_metrics"].get(metric, 0) for s in strategies]
+        values = [
+            stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
+        ]
         best_values[metric] = max(values)
 
     lines = [
@@ -405,14 +378,10 @@ def create_latex_table(results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@
     for strategy in strategies:
         row = [strategy.replace("_", "\\_")]
         for metric in metrics:
-            if stats_data:
-                m = stats_data[strategy]["metrics"].get(metric, {})
-                mean = m.get("mean", 0)
-                std = m.get("std", 0)
-                value_str = f"{mean:.4f}$\\pm${std:.4f}" if has_std else f"{mean:.4f}"
-            else:
-                mean = results[strategy]["test_metrics"].get(metric, 0)
-                value_str = f"{mean:.4f}"
+            m = stats_data[strategy]["metrics"].get(metric, {})
+            mean = m.get("mean", 0)
+            std = m.get("std", 0)
+            value_str = f"{mean:.4f}$\\pm${std:.4f}"
 
             if abs(mean - best_values[metric]) < 1e-6:
                 value_str = f"\\textbf{{{value_str}}}"
@@ -423,15 +392,16 @@ def create_latex_table(results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@
     return "\n".join(lines)
 
 
-def generate_full_report(results_file, output_dir="results"):
+def generate_full_report(results_file, output_dir=None):
     """Generate a full analysis report with all visualizations."""
-    import os
+
+    if output_dir is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join("results", f"analysis_{timestamp}")
 
     os.makedirs(output_dir, exist_ok=True)
 
     results = load_results(results_file)
-
-    print("Generating analysis report...")
 
     # Metric comparison
     plot_all_metrics(results, output_path=os.path.join(output_dir, "comparison.png"))
@@ -464,18 +434,15 @@ def generate_full_report(results_file, output_dir="results"):
     latex_table = create_latex_table(results)
     with open(os.path.join(output_dir, "table.tex"), "w") as f:
         f.write(latex_table)
-    print(f"\nLaTeX table saved to {os.path.join(output_dir, 'table.tex')}")
 
-    print("\nLaTeX Table:")
-    print(latex_table)
+    print(f"Analysis files saved to: {output_dir}")
 
 
 if __name__ == "__main__":
-    import sys
-
     if len(sys.argv) > 1:
         results_file = sys.argv[1]
-        output_dir = sys.argv[2] if len(sys.argv) > 2 else "results"
+        output_dir = sys.argv[2] if len(sys.argv) > 2 else None
         generate_full_report(results_file, output_dir)
     else:
         print("Usage: python analysis.py <results_file.json> [output_dir]")
+        print("If output_dir is not specified, a timestamped folder will be created.")
