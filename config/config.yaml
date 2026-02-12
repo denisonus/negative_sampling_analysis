@@ -24,7 +24,7 @@ candidate_pool_size: 100
 hard_neg_ratio: 0.5
 
 # DNS (Dynamic Negative Sampling)
-dns_temperature: 1.0
+dns_temperature: 0.1
 
 # Curriculum learning
 curriculum_start_ratio: 0.0    # Start with all random negatives

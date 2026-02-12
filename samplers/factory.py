@@ -95,7 +95,7 @@ def get_sampler(
             model,
             device,
             candidate_pool_size=kwargs.get("candidate_pool_size", 100),
-            temperature=kwargs.get("dns_temperature", 1.0),
+            temperature=kwargs.get("dns_temperature", 0.1),
         )
 
     elif strategy == "curriculum":
