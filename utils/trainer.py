@@ -189,6 +189,20 @@ class InBatchTrainer(Trainer):
             logits = torch.matmul(user_emb, item_emb.t())
             logits = logits / self.model.temperature.clamp(min=0.01)
 
+            # Mask out known positives to avoid false negatives
+            user_ids_list = user_ids.tolist()
+            pos_item_ids_list = pos_item_ids.tolist()
+            item_to_idx = {item: idx for idx, item in enumerate(pos_item_ids_list)}
+            mask_i, mask_j = [], []
+            for i, uid in enumerate(user_ids_list):
+                for item_id in self.sampler.user_item_dict.get(uid, set()):
+                    j = item_to_idx.get(item_id)
+                    if j is not None and i != j:
+                        mask_i.append(i)
+                        mask_j.append(j)
+            if mask_i:
+                logits[mask_i, mask_j] = float("-inf")
+
             labels = torch.arange(batch_size, device=self.device)
             loss = torch.nn.functional.cross_entropy(logits, labels)
 
