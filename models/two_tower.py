@@ -80,7 +80,14 @@ class TwoTowerModel(nn.Module):
 
         return scores / self.temperature.clamp(min=0.01)
 
-    def compute_loss(self, user_ids, pos_item_ids, neg_item_ids, neg_log_probs=None):
+    def compute_loss(
+        self,
+        user_ids,
+        pos_item_ids,
+        neg_item_ids,
+        neg_log_probs=None,
+        tau_plus=None,
+    ):
         """Compute contrastive loss (InfoNCE / Sampled Softmax).
 
         Args:
@@ -91,6 +98,8 @@ class TwoTowerModel(nn.Module):
                            Shape: (batch_size, num_neg). When provided, applies
                            logQ correction: logits -= log(Q(neg)) to debias
                            non-uniform sampling distributions.
+            tau_plus: Optional positive class prior for debiased contrastive loss.
+                      Corrects for false negatives among sampled negatives.
         """
         user_emb = self.get_user_embedding(user_ids)
         pos_item_emb = self.get_item_embedding(pos_item_ids)
@@ -99,18 +108,35 @@ class TwoTowerModel(nn.Module):
         pos_scores = torch.sum(user_emb * pos_item_emb, dim=-1, keepdim=True)
         neg_scores = torch.bmm(neg_item_emb, user_emb.unsqueeze(-1)).squeeze(-1)
 
-        # Temperature-scaled logits
-        logits = torch.cat([pos_scores, neg_scores], dim=-1) / self.temperature.clamp(
-            min=0.01
-        )
+        # Temperature scaling
+        temp = self.temperature.clamp(min=0.01)
+        pos_logits = pos_scores / temp
+        neg_logits = neg_scores / temp
 
         # Apply logQ correction
         if neg_log_probs is not None:
-            # Subtract log(Q) from negative logits only (index 1 onwards)
-            logits[:, 1:] = logits[:, 1:] - neg_log_probs
+            neg_logits = neg_logits - neg_log_probs
 
+        # Debiased contrastive loss (Chuang et al., NeurIPS 2020)
+        if tau_plus is not None:
+            N = neg_logits.size(1)
+            # Debiased negative score: subtract positive contribution
+            neg_exp = torch.exp(neg_logits)
+            pos_exp = torch.exp(pos_logits)
+            # g = (sum(exp(neg)) - N * tau * exp(pos)) / (1 - tau)
+            neg_sum = neg_exp.sum(dim=1, keepdim=True)
+            debiased_neg = (neg_sum - N * tau_plus * pos_exp) / (1 - tau_plus)
+            debiased_neg = debiased_neg.clamp(
+                min=N
+                * torch.exp(torch.tensor(-1.0 / temp.item(), device=neg_logits.device))
+            )
+            # Loss: -log(exp(pos) / (exp(pos) + debiased_neg))
+            loss = -torch.log(pos_exp / (pos_exp + debiased_neg) + 1e-8)
+            return loss.mean()
+
+        # Standard InfoNCE
+        logits = torch.cat([pos_logits, neg_logits], dim=-1)
         labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)
-
         return F.cross_entropy(logits, labels)
 
     def get_all_item_embeddings(self):

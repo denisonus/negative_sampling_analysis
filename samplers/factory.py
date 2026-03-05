@@ -11,6 +11,7 @@ from .mixed import MixedNegativeSampler
 from .in_batch import InBatchNegativeSampler
 from .dns import DNSNegativeSampler
 from .curriculum import CurriculumNegativeSampler
+from .debiased import DebiasedNegativeSampler
 
 
 def get_sampler(
@@ -27,12 +28,12 @@ def get_sampler(
 
     Args:
         strategy: Sampling strategy name ('uniform', 'popularity', 'hard',
-                  'mixed', 'in_batch', 'dns', 'curriculum')
+                  'mixed', 'in_batch', 'dns', 'curriculum', 'ance', 'debiased')
         num_items: Total number of items
         num_neg_samples: Number of negative samples per user
         user_item_dict: Dictionary mapping user IDs to sets of positive item IDs
         item_popularity: Item popularity counts (required for 'popularity' strategy)
-        model: Model for computing embeddings (required for 'hard', 'dns', 'curriculum')
+        model: Model for computing embeddings (required for 'hard', 'dns', 'curriculum', 'ance')
         device: Device for tensors
         **kwargs: Additional strategy-specific parameters
 
@@ -109,6 +110,15 @@ def get_sampler(
             start_hard_ratio=kwargs.get("curriculum_start_ratio", 0.0),
             end_hard_ratio=kwargs.get("curriculum_end_ratio", 0.8),
             warmup_epochs=kwargs.get("curriculum_warmup_epochs", 10),
+        )
+
+    elif strategy == "debiased":
+        return DebiasedNegativeSampler(
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            device,
+            tau_plus=kwargs.get("tau_plus", 0.05),
         )
 
     else:
