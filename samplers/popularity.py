@@ -1,4 +1,15 @@
-"""Popularity-based negative sampling."""
+"""Popularity-based negative sampling.
+
+Samples negatives proportionally to item popularity (with smoothing).
+Returns log sampling probabilities for logQ correction.
+
+Reference:
+    Mikolov et al., "Distributed Representations of Words and Phrases and
+    their Compositionality" (NeurIPS 2013) — 0.75 smoothing exponent.
+
+    Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
+    Item Recommendations" (RecSys 2019) — logQ correction for two-tower models.
+"""
 
 import torch
 import numpy as np
@@ -8,14 +19,20 @@ from .base import NegativeSampler, Device, SamplingResult
 
 
 class PopularityNegativeSampler(NegativeSampler):
-    """Popularity-based negative sampling with optional bias correction.
+    """Popularity-based negative sampling with logQ bias correction.
 
     Samples negatives proportionally to item popularity (with smoothing).
     More popular items are more likely to be sampled as negatives,
     which provides harder negatives without requiring model inference.
 
-    Returns log sampling probabilities for logQ
-    correction, enabling unbiased gradient estimation.
+    Returns log sampling probabilities for logQ correction,
+    enabling unbiased gradient estimation.
+
+    Reference:
+        Mikolov et al., "Distributed Representations of Words and Phrases
+        and their Compositionality" (NeurIPS 2013).
+        Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
+        Item Recommendations" (RecSys 2019).
     """
 
     def __init__(

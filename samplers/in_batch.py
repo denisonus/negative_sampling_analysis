@@ -1,4 +1,15 @@
-"""In-batch negative sampling."""
+"""In-batch negative sampling.
+
+Uses other positive items in the same mini-batch as negatives,
+a computationally efficient strategy widely used in two-tower models.
+
+Reference:
+    Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
+    Item Recommendations" (RecSys 2019).
+
+    Yang et al., "Mixed Negative Sampling for Learning Two-tower Neural
+    Networks in Recommendations" (WWW 2020).
+"""
 
 import torch
 from typing import Set, Dict
@@ -7,12 +18,16 @@ from .base import NegativeSampler, Device
 
 
 class InBatchNegativeSampler(NegativeSampler):
-    """In-batch negative sampling - uses other items in batch as negatives.
+    """In-batch negative sampling — uses other items in batch as negatives.
 
     Note: The actual in-batch negative logic is implemented in InBatchTrainer,
     where all positive items in the batch serve as negatives for other users.
     This sampler satisfies the sampler interface but returns empty tensors
     since sampling is handled during the forward pass.
+
+    Reference:
+        Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
+        Item Recommendations" (RecSys 2019).
     """
 
     def __init__(

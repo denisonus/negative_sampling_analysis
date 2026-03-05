@@ -1,4 +1,12 @@
-"""Hard negative mining sampler."""
+"""Hard negative mining sampler.
+
+Selects negatives that the model currently scores highly (near the decision
+boundary), providing maximally informative training signal.
+
+Reference:
+    Schroff et al., "FaceNet: A Unified Embedding for Face Recognition
+    and Clustering" (CVPR 2015) — hard negative mining in metric learning.
+"""
 
 import torch
 import numpy as np
@@ -16,10 +24,14 @@ class EmbeddingModel(Protocol):
 
 
 class HardNegativeSampler(NegativeSampler):
-    """Hard negative mining - samples negatives with high model scores.
+    """Hard negative mining — selects negatives with highest model scores.
 
     Generates a candidate pool of random negatives, then selects
-    the ones with highest predicted scores as hard negatives.
+    the ones with highest predicted scores (top-k) as hard negatives.
+
+    Reference:
+        Schroff et al., "FaceNet: A Unified Embedding for Face Recognition
+        and Clustering" (CVPR 2015).
     """
 
     def __init__(

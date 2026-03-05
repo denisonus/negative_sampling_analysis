@@ -1,4 +1,18 @@
-"""Curriculum Learning negative sampling."""
+"""Curriculum Learning negative sampling.
+
+Applies curriculum learning principles to negative sampling: starts training
+with easy (uniform) negatives and linearly increases the proportion of hard
+negatives over a warmup period. This prevents training instability from
+premature hard negatives while gradually improving sample informativeness.
+
+Reference:
+    Bengio et al., "Curriculum Learning" (ICML 2009) — general principle
+    of training on easy examples first, then gradually increasing difficulty.
+
+    Applied to negative sampling following:
+    Ding et al., "Reinforced Negative Sampling over Knowledge Graph for
+    Recommendation" (WWW 2020) — adaptive NS difficulty scheduling.
+"""
 
 import torch
 import numpy as np
@@ -10,12 +24,20 @@ from .hard import EmbeddingModel
 
 
 class CurriculumNegativeSampler(NegativeSampler):
-    """Curriculum Learning - gradually increase negative difficulty during training.
+    """Curriculum Learning negative sampling.
 
-    Starts with easy (random) negatives and progressively introduces harder negatives
-    as training progresses, following curriculum learning principles.
+    Starts with easy (random) negatives and progressively increases the ratio
+    of hard negatives over a configurable warmup period, following curriculum
+    learning principles (Bengio et al., 2009). The hard-to-easy ratio grows
+    linearly from start_hard_ratio to end_hard_ratio over warmup_epochs.
 
-    Reference: Bengio et al., "Curriculum Learning"
+    Hard negatives are selected via top-k scoring from a candidate pool
+    (same mechanism as HardNegativeSampler).
+
+    Reference:
+        Bengio et al., "Curriculum Learning" (ICML 2009).
+        Ding et al., "Reinforced Negative Sampling over KG for
+        Recommendation" (WWW 2020).
     """
 
     def __init__(

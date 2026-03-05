@@ -1,4 +1,11 @@
-"""Uniform random negative sampling."""
+"""Uniform random negative sampling.
+
+Standard baseline approach for implicit feedback recommendation.
+
+Reference:
+    Rendle et al., "BPR: Bayesian Personalized Ranking from Implicit
+    Feedback" (UAI 2009).
+"""
 
 import torch
 import numpy as np
@@ -12,6 +19,10 @@ class UniformNegativeSampler(NegativeSampler):
 
     Samples negatives uniformly at random from all items,
     excluding items the user has already interacted with.
+
+    Reference:
+        Rendle et al., "BPR: Bayesian Personalized Ranking from Implicit
+        Feedback" (UAI 2009).
     """
 
     def __init__(

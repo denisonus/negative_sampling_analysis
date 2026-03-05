@@ -1,4 +1,17 @@
-"""Mixed negative sampling (uniform + hard negatives)."""
+"""Mixed negative sampling (uniform + hard negatives).
+
+Combines easy (uniform) and hard (model-scored) negatives in a fixed ratio.
+Mixing prevents training instability from exclusively hard negatives while
+still providing informative samples.
+
+Reference:
+    Robinson et al., "Contrastive Learning with Hard Negative Samples"
+    (ICLR 2021) — hard/easy negative mixing with a controllable ratio β.
+
+    Schroff et al., "FaceNet: A Unified Embedding for Face Recognition
+    and Clustering" (CVPR 2015) — semi-hard mining principle: mixing hard
+    and easy negatives leads to more stable training than pure hard mining.
+"""
 
 import torch
 from typing import Set, Dict, Optional
@@ -9,11 +22,17 @@ from .hard import HardNegativeSampler, EmbeddingModel
 
 
 class MixedNegativeSampler(NegativeSampler):
-    """Mixed sampling: combines uniform and hard negative mining.
+    """Mixed sampling: combines uniform (easy) and hard negative mining.
 
-    Uses composition to delegate to specialized samplers.
-    A portion of negatives are sampled uniformly (easy),
-    and the rest are hard negatives from the model.
+    A configurable ratio (hard_ratio) controls the split between hard negatives
+    (selected via top-k scoring from a candidate pool) and easy negatives
+    (sampled uniformly at random). This balances informativeness with training
+    stability — pure hard negatives can cause collapse, while pure uniform
+    negatives converge slowly.
+
+    Reference:
+        Robinson et al., "Contrastive Learning with Hard Negative Samples"
+        (ICLR 2021).
     """
 
     def __init__(
