@@ -191,6 +191,26 @@ class InBatchTrainer(Trainer):
             prob = freq / freq.sum()
             self._log_q = torch.from_numpy(np.log(prob + 1e-10)).float().to(device)
 
+        # Pre-build sparse user-item interaction matrix for vectorized
+        # false-negative masking (avoids Python loops each step).
+        uid_dict = sampler.user_item_dict
+        rows, cols = [], []
+        for uid, items in uid_dict.items():
+            for iid in items:
+                rows.append(uid)
+                cols.append(iid)
+        n_users = max(uid_dict.keys()) + 1
+        n_items = sampler.num_items
+        self._interaction = (
+            torch.sparse_coo_tensor(
+                torch.tensor([rows, cols], dtype=torch.long),
+                torch.ones(len(rows), dtype=torch.float32),
+                size=(n_users, n_items),
+            )
+            .coalesce()
+            .to(device)
+        )
+
     def train_epoch(self, train_loader, epoch=0):
         self.model.train()
         total_loss = 0
@@ -215,22 +235,16 @@ class InBatchTrainer(Trainer):
             if self.logq_correction and self._log_q is not None:
                 logits = logits - self._log_q[pos_item_ids].unsqueeze(0)
 
-            # Mask out known positives to avoid false negatives
-            user_ids_list = user_ids.tolist()
-            pos_item_ids_list = pos_item_ids.tolist()
-            item_to_indices = {}
-            for idx, item in enumerate(pos_item_ids_list):
-                item_to_indices.setdefault(item, []).append(idx)
-
-            mask_i, mask_j = [], []
-            for i, uid in enumerate(user_ids_list):
-                for item_id in self.sampler.user_item_dict.get(uid, set()):
-                    for j in item_to_indices.get(item_id, []):
-                        if j != i:  # don't mask the diagonal (true positive)
-                            mask_i.append(i)
-                            mask_j.append(j)
-            if mask_i:
-                logits[mask_i, mask_j] = float("-inf")
+            # Vectorized false-negative masking via sparse interaction matrix:
+            # mask[i, j] = True when user_i has interacted with item at position j
+            mask = (
+                self._interaction.index_select(0, user_ids)
+                .to_dense()[:, pos_item_ids]
+                .bool()
+            )
+            # Keep diagonal (true positive for each user)
+            mask.fill_diagonal_(False)
+            logits[mask] = float("-inf")
 
             labels = torch.arange(batch_size, device=self.device)
             loss = torch.nn.functional.cross_entropy(logits, labels)
@@ -288,6 +302,25 @@ class CrossBatchTrainer(Trainer):
             prob = freq / freq.sum()
             self._log_q = torch.from_numpy(np.log(prob + 1e-10)).float().to(device)
 
+        # Sparse interaction matrix for vectorized false-negative masking
+        uid_dict = sampler.user_item_dict
+        rows, cols = [], []
+        for uid, items in uid_dict.items():
+            for iid in items:
+                rows.append(uid)
+                cols.append(iid)
+        n_users = max(uid_dict.keys()) + 1
+        n_items = sampler.num_items
+        self._interaction = (
+            torch.sparse_coo_tensor(
+                torch.tensor([rows, cols], dtype=torch.long),
+                torch.ones(len(rows), dtype=torch.float32),
+                size=(n_users, n_items),
+            )
+            .coalesce()
+            .to(device)
+        )
+
     def train_epoch(self, train_loader, epoch=0):
         self.model.train()
         total_loss = 0
@@ -323,22 +356,14 @@ class CrossBatchTrainer(Trainer):
             if self.logq_correction and self._log_q is not None:
                 logits = logits - self._log_q[all_item_ids].unsqueeze(0)
 
-            # Mask out known positives to avoid false negatives
-            user_ids_list = user_ids.tolist()
-            all_item_ids_list = all_item_ids.tolist()
-            item_to_indices = {}
-            for idx, item in enumerate(all_item_ids_list):
-                item_to_indices.setdefault(item, []).append(idx)
-
-            mask_i, mask_j = [], []
-            for i, uid in enumerate(user_ids_list):
-                for item_id in self.sampler.user_item_dict.get(uid, set()):
-                    for j in item_to_indices.get(item_id, []):
-                        if j != i:  # don't mask the diagonal (true positive)
-                            mask_i.append(i)
-                            mask_j.append(j)
-            if mask_i:
-                logits[mask_i, mask_j] = float("-inf")
+            # Vectorized false-negative masking via sparse interaction matrix
+            mask = (
+                self._interaction.index_select(0, user_ids)
+                .to_dense()[:, all_item_ids]
+                .bool()
+            )
+            mask[:, :batch_size].fill_diagonal_(False)  # keep diagonal (true positives)
+            logits[mask] = float("-inf")
 
             # Labels: each user's positive is at its own index in the current batch
             labels = torch.arange(batch_size, device=self.device)
