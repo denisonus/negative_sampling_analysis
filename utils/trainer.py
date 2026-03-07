@@ -130,7 +130,7 @@ class Trainer:
 
                 valid_metric_name = self.config.get("valid_metric", "ndcg@10").lower()
                 valid_metric = metrics.get(valid_metric_name, 0)
-                self.valid_metrics.append(valid_metric)
+                self.valid_metrics.append({k: float(v) for k, v in metrics.items()})
 
                 # Log @10 metrics during training
                 metrics_at_10 = {
