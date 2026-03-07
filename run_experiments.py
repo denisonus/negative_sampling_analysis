@@ -1,6 +1,8 @@
 """Main Experiment Runner for comparing negative sampling strategies."""
 
 import os
+import sys
+import platform
 import yaml
 import json
 import torch
@@ -21,6 +23,7 @@ from utils import (
     SimpleDataLoader,
     Trainer,
     InBatchTrainer,
+    CrossBatchTrainer,
 )
 from evaluation import Evaluator
 
@@ -71,12 +74,13 @@ def run_experiment(config, sampling_strategy, device):
 
     num_users = dataset.num(dataset.uid_field)
     num_items = dataset.num(dataset.iid_field)
+    num_train = len(get_train_interactions(train_data))
     print(f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items}")
 
     user_item_dict = build_user_item_dict(dataset)
     item_popularity = compute_item_popularity(dataset)
     train_interactions = get_train_interactions(train_data)
-    print(f"Training interactions: {len(train_interactions)}")
+    print(f"Training interactions: {num_train}")
 
     train_loader = SimpleDataLoader(
         train_interactions,
@@ -102,6 +106,7 @@ def run_experiment(config, sampling_strategy, device):
         model=model,
         device=device,
         hard_ratio=config.get("hard_neg_ratio", 0.5),
+        logq_correction=config.get("logq_correction", False),
     )
 
     evaluator = Evaluator(
@@ -111,11 +116,16 @@ def run_experiment(config, sampling_strategy, device):
         device=device,
     )
 
-    trainer = (
-        InBatchTrainer(model, sampler, config, device)
-        if sampling_strategy == "in_batch"
-        else Trainer(model, sampler, config, device)
-    )
+    if sampling_strategy == "in_batch":
+        trainer = InBatchTrainer(
+            model, sampler, config, device, item_popularity=item_popularity
+        )
+    elif sampling_strategy == "cross_batch":
+        trainer = CrossBatchTrainer(
+            model, sampler, config, device, item_popularity=item_popularity
+        )
+    else:
+        trainer = Trainer(model, sampler, config, device)
 
     print("\nTraining...")
     train_history = trainer.fit(
@@ -141,6 +151,11 @@ def run_experiment(config, sampling_strategy, device):
             "total_sampling_time": train_history.get("total_sampling_time", 0),
             "total_training_time": train_history.get("total_training_time", 0),
         },
+        "dataset_stats": {
+            "num_users": num_users,
+            "num_items": num_items,
+            "num_train_interactions": num_train,
+        },
     }
 
 
@@ -153,6 +168,7 @@ def run_all_experiments(config, strategies=None, num_runs=1):
             "hard",
             "mixed",
             "in_batch",
+            "cross_batch",
             "dns",
             "curriculum",
             "debiased",
@@ -247,7 +263,7 @@ def compute_statistics(all_results):
     return stats_results
 
 
-def save_results(all_results, output_dir="results"):
+def save_results(all_results, output_dir="results", config=None):
     """Compare and save results with statistical analysis."""
     os.makedirs(output_dir, exist_ok=True)
 
@@ -304,8 +320,18 @@ def save_results(all_results, output_dir="results"):
                     "test_metrics": r["test_metrics"],
                     "timing": r["timing"],
                     "best_epoch": r["train_history"].get("best_epoch", -1),
+                    "epochs_trained": len(r["train_history"].get("train_losses", [])),
+                    "early_stopped": (
+                        len(r["train_history"].get("train_losses", []))
+                        < config.get("epochs", 50)
+                        if config
+                        else False
+                    ),
                     "train_losses": r["train_history"].get("train_losses", []),
                     "valid_metrics": r["train_history"].get("valid_metrics", []),
+                    "epoch_times": r["train_history"].get("epoch_times", []),
+                    "sampling_times": r["train_history"].get("sampling_times", []),
+                    "training_times": r["train_history"].get("training_times", []),
                 }
                 for r in runs
             ]
@@ -316,12 +342,27 @@ def save_results(all_results, output_dir="results"):
     with open(results_file, "w") as f:
         json.dump(save_data, f, indent=2)
 
+    # Collect dataset stats from the first available run
+    dataset_stats = {}
+    for runs in all_results.values():
+        if runs and "dataset_stats" in runs[0]:
+            dataset_stats = runs[0]["dataset_stats"]
+            break
+
     # Save a metadata file with run information
     metadata = {
         "timestamp": timestamp,
         "strategies": list(all_results.keys()),
         "num_runs": len(list(all_results.values())[0]) if all_results else 0,
         "results_file": "results.json",
+        "config": config,
+        "dataset_stats": dataset_stats,
+        "environment": {
+            "python_version": sys.version,
+            "torch_version": torch.__version__,
+            "platform": platform.platform(),
+            "device": str(get_device(config)) if config else "unknown",
+        },
     }
     metadata_file = os.path.join(run_output_dir, "metadata.json")
     with open(metadata_file, "w") as f:
@@ -356,7 +397,9 @@ def main():
     )
 
     if all_results:
-        stats_results, output_dir = save_results(all_results, args.output)
+        stats_results, output_dir = save_results(
+            all_results, args.output, config=config
+        )
         print(f"\nExperiment complete! Results saved in: {output_dir}")
 
 

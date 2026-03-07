@@ -43,9 +43,11 @@ class PopularityNegativeSampler(NegativeSampler):
         item_popularity: Union[List[float], np.ndarray],
         device: Device = "cpu",
         smoothing: float = 0.75,
+        logq_correction: bool = True,
     ):
         super().__init__(num_items, num_neg_samples, user_item_dict, device)
         self.name = "popularity"
+        self.logq_correction = logq_correction
 
         # Apply smoothing to reduce bias towards very popular items
         popularity = np.array(item_popularity, dtype=np.float64)
@@ -93,7 +95,12 @@ class PopularityNegativeSampler(NegativeSampler):
 
         neg_items_tensor = torch.from_numpy(neg_items).to(self.device)
 
-        log_probs = (
-            torch.from_numpy(self.log_sampling_probs[neg_items]).float().to(self.device)
-        )
-        return SamplingResult(neg_items=neg_items_tensor, log_probs=log_probs)
+        if self.logq_correction:
+            log_probs = (
+                torch.from_numpy(self.log_sampling_probs[neg_items])
+                .float()
+                .to(self.device)
+            )
+            return SamplingResult(neg_items=neg_items_tensor, log_probs=log_probs)
+
+        return SamplingResult(neg_items=neg_items_tensor, log_probs=None)
