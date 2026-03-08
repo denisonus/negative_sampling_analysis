@@ -12,7 +12,6 @@ from .in_batch import InBatchNegativeSampler
 from .dns import DNSNegativeSampler
 from .curriculum import CurriculumNegativeSampler
 from .debiased import DebiasedNegativeSampler
-from .cross_batch import CrossBatchNegativeSampler
 
 
 def get_sampler(
@@ -120,11 +119,6 @@ def get_sampler(
             user_item_dict,
             device,
             tau_plus=kwargs.get("tau_plus", 0.05),
-        )
-
-    elif strategy == "cross_batch":
-        return CrossBatchNegativeSampler(
-            num_items, num_neg_samples, user_item_dict, device
         )
 
     else:

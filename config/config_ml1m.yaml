@@ -32,11 +32,10 @@ curriculum_end_ratio: 0.8
 curriculum_warmup_epochs: 10
 
 # Sampling-bias correction
-# Applies to: popularity, in_batch & cross_batch.
+# Applies to: popularity, in_batch.
 logq_correction: true
 
-# Cross-Batch Negatives (CBNS)
-cbns_queue_size: 2
+
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit']

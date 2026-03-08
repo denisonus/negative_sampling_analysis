@@ -23,7 +23,6 @@ from utils import (
     SimpleDataLoader,
     Trainer,
     InBatchTrainer,
-    CrossBatchTrainer,
 )
 from evaluation import Evaluator
 
@@ -120,10 +119,6 @@ def run_experiment(config, sampling_strategy, device):
         trainer = InBatchTrainer(
             model, sampler, config, device, item_popularity=item_popularity
         )
-    elif sampling_strategy == "cross_batch":
-        trainer = CrossBatchTrainer(
-            model, sampler, config, device, item_popularity=item_popularity
-        )
     else:
         trainer = Trainer(model, sampler, config, device)
 
@@ -168,7 +163,6 @@ def run_all_experiments(config, strategies=None, num_runs=1):
             "hard",
             "mixed",
             "in_batch",
-            "cross_batch",
             "dns",
             "curriculum",
             "debiased",

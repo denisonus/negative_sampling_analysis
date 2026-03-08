@@ -5,4 +5,4 @@ from .data_utils import (
     get_train_interactions,
     SimpleDataLoader,
 )
-from .trainer import Trainer, InBatchTrainer, CrossBatchTrainer
+from .trainer import Trainer, InBatchTrainer

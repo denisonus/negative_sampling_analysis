@@ -32,7 +32,7 @@ curriculum_end_ratio: 0.8      # End with 80% hard negatives
 curriculum_warmup_epochs: 10   # Epochs to transition
 
 # Sampling-bias correction
-# Applies to: popularity, in_batch & cross_batch.
+# Applies to: popularity, in_batch.
 logq_correction: true
 
 # Evaluation
