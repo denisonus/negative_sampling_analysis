@@ -68,13 +68,19 @@ def run_experiment(config, sampling_strategy, device):
     # Load data
     print("Loading dataset...")
     recbole_config, dataset, train_data, valid_data, test_data = load_recbole_dataset(
-        config["dataset"], config.get("data_path", "dataset/")
+        config["dataset"],
+        config.get("data_path", "dataset/"),
+        min_rating=config["min_rating"],
     )
 
     num_users = dataset.num(dataset.uid_field)
     num_items = dataset.num(dataset.iid_field)
     num_train = len(get_train_interactions(train_data))
-    print(f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items}")
+    rating_filter = config["min_rating"]
+    print(
+        f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
+        f"rating >= {rating_filter}"
+    )
 
     user_item_dict = build_user_item_dict(dataset)
     item_popularity = compute_item_popularity(dataset)

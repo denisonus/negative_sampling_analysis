@@ -2,6 +2,7 @@
 seed: 42
 dataset: 'ml-1m'
 data_path: 'dataset/'
+min_rating: 4
 
 # Model
 embedding_size: 64

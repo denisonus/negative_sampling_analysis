@@ -7,7 +7,7 @@ from recbole.config import Config
 from recbole.data import create_dataset, data_preparation
 
 
-def load_recbole_dataset(dataset_name, data_path="dataset/"):
+def load_recbole_dataset(dataset_name, data_path="dataset/", min_rating=4):
     """Load dataset using RecBole."""
     config_dict = {
         "data_path": data_path,
@@ -23,6 +23,7 @@ def load_recbole_dataset(dataset_name, data_path="dataset/"):
         "metrics": ["Recall", "NDCG", "MRR", "Hit"],
         "topk": [5, 10, 20],
         "valid_metric": "NDCG@10",
+        "val_interval": {"rating": f"[{min_rating},inf)"},
     }
 
     config = Config(model="BPR", dataset=dataset_name, config_dict=config_dict)
