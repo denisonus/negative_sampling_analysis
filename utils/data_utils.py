@@ -59,6 +59,31 @@ def compute_item_popularity(dataset):
     return popularity + 1  # Add smoothing
 
 
+def build_user_item_dict_from_train(train_interactions):
+    """Build user-item interaction dictionary from training interactions only.
+
+    Unlike build_user_item_dict(dataset), this avoids data leakage by
+    excluding validation/test interactions from the positive set used
+    during negative sampling.
+    """
+    user_item_dict = defaultdict(set)
+    for user, item in train_interactions:
+        user_item_dict[user].add(item)
+    return dict(user_item_dict)
+
+
+def compute_item_popularity_from_train(train_interactions, num_items):
+    """Compute item popularity from training interactions only.
+
+    Unlike compute_item_popularity(dataset), this avoids data leakage by
+    excluding validation/test interactions from popularity statistics.
+    """
+    popularity = np.zeros(num_items)
+    for _, item in train_interactions:
+        popularity[item] += 1
+    return popularity + 1  # Add smoothing
+
+
 def get_train_interactions(train_data):
     """Extract user-item pairs from training data."""
     interactions = []

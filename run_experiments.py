@@ -17,8 +17,8 @@ from models import TwoTowerModel
 from samplers import get_sampler
 from utils import (
     load_recbole_dataset,
-    build_user_item_dict,
-    compute_item_popularity,
+    build_user_item_dict_from_train,
+    compute_item_popularity_from_train,
     get_train_interactions,
     SimpleDataLoader,
     Trainer,
@@ -82,9 +82,9 @@ def run_experiment(config, sampling_strategy, device):
         f"rating >= {rating_filter}"
     )
 
-    user_item_dict = build_user_item_dict(dataset)
-    item_popularity = compute_item_popularity(dataset)
     train_interactions = get_train_interactions(train_data)
+    user_item_dict = build_user_item_dict_from_train(train_interactions)
+    item_popularity = compute_item_popularity_from_train(train_interactions, num_items)
     print(f"Training interactions: {num_train}")
 
     train_loader = SimpleDataLoader(
