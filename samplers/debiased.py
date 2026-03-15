@@ -1,10 +1,4 @@
-"""Debiased Contrastive negative sampling.
-
-Corrects for the fact that uniformly sampled "negatives" may actually be
-unlabeled positives, using importance weighting to debias the contrastive loss.
-
-Reference: Chuang et al., "Debiased Contrastive Learning" (NeurIPS 2020)
-"""
+"""Debiased contrastive negative sampling."""
 
 import torch
 import numpy as np
@@ -14,17 +8,7 @@ from .base import NegativeSampler, Device
 
 
 class DebiasedNegativeSampler(NegativeSampler):
-    """Debiased Contrastive negative sampling.
-
-    Samples negatives uniformly and estimates the probability that a sampled
-    negative is a true negative (not an unlabeled positive). This produces
-    a debiased score that the loss function can use.
-
-    The key idea: with N total items and tau as the estimated positive class
-    prior, the debiased negative score is:
-        g = max(score_neg - tau * score_pos, e^(-1/t))
-    where the clipping prevents degenerate solutions.
-    """
+    """Uniform sampling paired with loss-level debiasing via ``tau_plus``."""
 
     def __init__(
         self,
@@ -41,11 +25,7 @@ class DebiasedNegativeSampler(NegativeSampler):
     def sample(
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
     ) -> torch.Tensor:
-        """Sample negatives uniformly. Debiasing is applied at the loss level.
-
-        The debiasing correction weights are stored in self.last_tau_plus
-        for use by the trainer.
-        """
+        """Sample negatives and expose ``tau_plus`` for the trainer."""
         batch_size = user_ids.size(0)
 
         oversample = max(self.num_neg_samples * 3, self.num_neg_samples + 50)
@@ -71,7 +51,6 @@ class DebiasedNegativeSampler(NegativeSampler):
                         neg_items[i, idx] = c
                         idx += 1
 
-        # Store tau_plus for debiased loss computation
         self.last_tau_plus = self.tau_plus
 
         return torch.from_numpy(neg_items).to(self.device)

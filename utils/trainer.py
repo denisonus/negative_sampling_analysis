@@ -174,10 +174,8 @@ class Trainer:
 
 class InBatchTrainer(Trainer):
     """Trainer with in-batch negative sampling.
-
-    Optionally applies logQ correction (Yi et al., RecSys 2019) to
-    counteract the implicit popularity bias: items that appear more
-    frequently in training are more likely to be in-batch negatives.
+    
+    Optionally applies logQ correction
     """
 
     def __init__(self, model, sampler, config, device, item_popularity=None):

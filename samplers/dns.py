@@ -1,20 +1,4 @@
-"""Dynamic Negative Sampling (DNS) — softmax variant.
-
-Softmax-based variant of Dynamic Negative Sampling.
-The original DNS (Zhang et al., 2013) selects the single hardest item (argmax)
-from a candidate pool. This implementation uses a softmax distribution over
-candidate scores, sampling negatives probabilistically rather than
-deterministically — providing better exploration and training stability.
-
-Reference:
-    Zhang et al., "Optimizing Top-N Collaborative Filtering via Dynamic
-    Negative Item Sampling" (RecSys 2013) — original DNS formulation.
-
-    Softmax variant discussed in:
-    Lai et al., "A Theoretical Analysis of Hard Negative Sampling in
-    Contrastive Learning for Recommendation" (2025) — distinguishes
-    DNS (exact estimator) from softmax-based sampling (soft estimator).
-"""
+"""Softmax-based dynamic negative sampling."""
 
 import torch
 import numpy as np
@@ -25,25 +9,7 @@ from .hard import EmbeddingModel
 
 
 class DNSNegativeSampler(NegativeSampler):
-    """Dynamic Negative Sampling (DNS) — softmax variant.
-
-    Samples a candidate pool of random unobserved items, scores them with
-    the current model, then samples negatives proportionally to their scores
-    using a softmax distribution (controlled by temperature).
-
-    Unlike the original DNS which selects the single hardest item (argmax),
-    this softmax variant samples stochastically — biased toward harder negatives
-    but with exploration, reducing the risk of training collapse from noisy
-    hard negatives.
-
-    Note: With L2-normalized embeddings (scores in [-1, 1]), use a low temperature
-    (e.g., 0.1) to create a peaked distribution. Temperature=1.0 results in nearly
-    uniform sampling which defeats the purpose of hard negative mining.
-
-    Reference:
-        Zhang et al., "Optimizing Top-N Collaborative Filtering via Dynamic
-        Negative Item Sampling" (RecSys 2013).
-    """
+    """Score a candidate pool with the model and sample via softmax."""
 
     def __init__(
         self,
@@ -124,7 +90,6 @@ class DNSNegativeSampler(NegativeSampler):
                 count = min(len(valid), self.candidate_pool_size)
                 result[i, :count] = valid[:count]
 
-                # Unlikely fallback: fill remaining slots
                 if count < self.candidate_pool_size:
                     positives_set = set(positives)
                     idx = count

@@ -1,12 +1,4 @@
-"""Hard negative mining sampler.
-
-Selects negatives that the model currently scores highly (near the decision
-boundary), providing maximally informative training signal.
-
-Reference:
-    Schroff et al., "FaceNet: A Unified Embedding for Face Recognition
-    and Clustering" (CVPR 2015) — hard negative mining in metric learning.
-"""
+"""Hard negative mining."""
 
 import torch
 import numpy as np
@@ -24,15 +16,7 @@ class EmbeddingModel(Protocol):
 
 
 class HardNegativeSampler(NegativeSampler):
-    """Hard negative mining — selects negatives with highest model scores.
-
-    Generates a candidate pool of random negatives, then selects
-    the ones with highest predicted scores (top-k) as hard negatives.
-
-    Reference:
-        Schroff et al., "FaceNet: A Unified Embedding for Face Recognition
-        and Clustering" (CVPR 2015).
-    """
+    """Sample a candidate pool and keep the highest-scoring negatives."""
 
     def __init__(
         self,
@@ -63,21 +47,17 @@ class HardNegativeSampler(NegativeSampler):
             batch_size, self.num_neg_samples, dtype=torch.long, device=self.device
         )
 
-        # Generate candidate pools for all users at once
         all_candidates, valid_counts = self._sample_candidate_pools_batch(user_ids)
 
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
-            # Get embeddings for all candidates at once
             all_cand_emb = self.model.get_item_embedding(all_candidates.view(-1)).view(
                 batch_size, self.candidate_pool_size, -1
             )
-            # Compute scores: (batch, 1, dim) @ (batch, dim, pool) -> (batch, 1, pool)
             scores = torch.bmm(
                 user_emb.unsqueeze(1), all_cand_emb.transpose(1, 2)
             ).squeeze(1)
 
-            # Select top-k for each user
             k = min(self.num_neg_samples, self.candidate_pool_size)
             _, top_indices = torch.topk(scores, k, dim=1)
             neg_items[:, :k] = torch.gather(all_candidates, 1, top_indices)
@@ -102,7 +82,6 @@ class HardNegativeSampler(NegativeSampler):
             count = min(len(valid), self.candidate_pool_size)
             result[i, :count] = valid[:count]
             valid_counts[i] = count
-            # Fill remaining with random if needed
             if count < self.candidate_pool_size:
                 idx = count
                 while idx < self.candidate_pool_size:

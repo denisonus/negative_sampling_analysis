@@ -351,47 +351,6 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
     return results_table
 
 
-def create_latex_table(results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"]):
-    """Create LaTeX table for paper with mean ± std."""
-    stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
-
-    # Find best values for bolding
-    best_values = {}
-    for metric in metrics:
-        values = [
-            stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
-        ]
-        best_values[metric] = max(values)
-
-    lines = [
-        "\\begin{table}[h]",
-        "\\centering",
-        "\\caption{Comparison of Negative Sampling Strategies}",
-        "\\label{tab:comparison}",
-        "\\begin{tabular}{l" + "c" * len(metrics) + "}",
-        "\\toprule",
-        " & ".join(["Strategy"] + [m.upper() for m in metrics]) + " \\\\",
-        "\\midrule",
-    ]
-
-    for strategy in strategies:
-        row = [strategy.replace("_", "\\_")]
-        for metric in metrics:
-            m = stats_data[strategy]["metrics"].get(metric, {})
-            mean = m.get("mean", 0)
-            std = m.get("std", 0)
-            value_str = f"{mean:.4f}$\\pm${std:.4f}"
-
-            if abs(mean - best_values[metric]) < 1e-6:
-                value_str = f"\\textbf{{{value_str}}}"
-            row.append(value_str)
-        lines.append(" & ".join(row) + " \\\\")
-
-    lines.extend(["\\bottomrule", "\\end{tabular}", "\\end{table}"])
-    return "\n".join(lines)
-
-
 def generate_full_report(results_file, output_dir=None):
     """Generate a full analysis report with all visualizations."""
 
@@ -429,11 +388,6 @@ def generate_full_report(results_file, output_dir=None):
             results, output_path=os.path.join(output_dir, "timing.png")
         )
         statistical_significance_test(results)
-
-    # LaTeX table
-    latex_table = create_latex_table(results)
-    with open(os.path.join(output_dir, "table.tex"), "w") as f:
-        f.write(latex_table)
 
     print(f"Analysis files saved to: {output_dir}")
 

@@ -24,25 +24,7 @@ def get_sampler(
     device: Device = "cpu",
     **kwargs,
 ) -> NegativeSampler:
-    """Factory function to create negative samplers.
 
-    Args:
-        strategy: Sampling strategy name ('uniform', 'popularity', 'hard',
-                  'mixed', 'in_batch', 'dns', 'curriculum', 'ance', 'debiased')
-        num_items: Total number of items
-        num_neg_samples: Number of negative samples per user
-        user_item_dict: Dictionary mapping user IDs to sets of positive item IDs
-        item_popularity: Item popularity counts (required for 'popularity' strategy)
-        model: Model for computing embeddings (required for 'hard', 'dns', 'curriculum', 'ance')
-        device: Device for tensors
-        **kwargs: Additional strategy-specific parameters
-
-    Returns:
-        NegativeSampler instance
-
-    Raises:
-        ValueError: If unknown strategy is specified
-    """
     strategy = strategy.lower()
 
     if strategy == "uniform":

@@ -1,18 +1,4 @@
-"""Curriculum Learning negative sampling.
-
-Applies curriculum learning principles to negative sampling: starts training
-with easy (uniform) negatives and linearly increases the proportion of hard
-negatives over a warmup period. This prevents training instability from
-premature hard negatives while gradually improving sample informativeness.
-
-Reference:
-    Bengio et al., "Curriculum Learning" (ICML 2009) — general principle
-    of training on easy examples first, then gradually increasing difficulty.
-
-    Applied to negative sampling following:
-    Ding et al., "Reinforced Negative Sampling over Knowledge Graph for
-    Recommendation" (WWW 2020) — adaptive NS difficulty scheduling.
-"""
+"""Curriculum-based negative sampling."""
 
 import torch
 import numpy as np
@@ -24,21 +10,7 @@ from .hard import EmbeddingModel
 
 
 class CurriculumNegativeSampler(NegativeSampler):
-    """Curriculum Learning negative sampling.
-
-    Starts with easy (random) negatives and progressively increases the ratio
-    of hard negatives over a configurable warmup period, following curriculum
-    learning principles (Bengio et al., 2009). The hard-to-easy ratio grows
-    linearly from start_hard_ratio to end_hard_ratio over warmup_epochs.
-
-    Hard negatives are selected via top-k scoring from a candidate pool
-    (same mechanism as HardNegativeSampler).
-
-    Reference:
-        Bengio et al., "Curriculum Learning" (ICML 2009).
-        Ding et al., "Reinforced Negative Sampling over KG for
-        Recommendation" (WWW 2020).
-    """
+    """Increase the share of hard negatives over the warmup period."""
 
     def __init__(
         self,
@@ -61,7 +33,6 @@ class CurriculumNegativeSampler(NegativeSampler):
         self.warmup_epochs = warmup_epochs
         self.current_epoch = 0
 
-        # Sub-sampler for random negatives
         self._uniform_sampler = UniformNegativeSampler(
             num_items, num_neg_samples, user_item_dict, device
         )
@@ -116,24 +87,19 @@ class CurriculumNegativeSampler(NegativeSampler):
             batch_size, num_hard, dtype=torch.long, device=self.device
         )
 
-        # Model is guaranteed to be not None here (checked in sample())
         assert self.model is not None
 
-        # Generate candidate pools for all users at once
         all_candidates = self._sample_candidate_pools_batch(user_ids)
 
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
-            # Get embeddings for all candidates at once
             all_cand_emb = self.model.get_item_embedding(all_candidates.view(-1)).view(
                 batch_size, self.candidate_pool_size, -1
             )
-            # Compute scores: (batch, 1, dim) @ (batch, dim, pool) -> (batch, 1, pool)
             scores = torch.bmm(
                 user_emb.unsqueeze(1), all_cand_emb.transpose(1, 2)
             ).squeeze(1)
 
-            # Select top-k for each user
             k = min(num_hard, self.candidate_pool_size)
             _, top_indices = torch.topk(scores, k, dim=1)
             neg_items[:, :k] = torch.gather(all_candidates, 1, top_indices)
@@ -156,7 +122,6 @@ class CurriculumNegativeSampler(NegativeSampler):
             valid = row[mask]
             count = min(len(valid), self.candidate_pool_size)
             result[i, :count] = valid[:count]
-            # Fill remaining with random if needed
             if count < self.candidate_pool_size:
                 idx = count
                 while idx < self.candidate_pool_size:

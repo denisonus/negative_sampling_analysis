@@ -1,15 +1,4 @@
-"""Popularity-based negative sampling.
-
-Samples negatives proportionally to item popularity (with smoothing).
-Returns log sampling probabilities for logQ correction.
-
-Reference:
-    Mikolov et al., "Distributed Representations of Words and Phrases and
-    their Compositionality" (NeurIPS 2013) — 0.75 smoothing exponent.
-
-    Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
-    Item Recommendations" (RecSys 2019) — logQ correction for two-tower models.
-"""
+"""Popularity-based negative sampling."""
 
 import torch
 import numpy as np
@@ -19,21 +8,7 @@ from .base import NegativeSampler, Device, SamplingResult
 
 
 class PopularityNegativeSampler(NegativeSampler):
-    """Popularity-based negative sampling with logQ bias correction.
-
-    Samples negatives proportionally to item popularity (with smoothing).
-    More popular items are more likely to be sampled as negatives,
-    which provides harder negatives without requiring model inference.
-
-    Returns log sampling probabilities for logQ correction,
-    enabling unbiased gradient estimation.
-
-    Reference:
-        Mikolov et al., "Distributed Representations of Words and Phrases
-        and their Compositionality" (NeurIPS 2013).
-        Yi et al., "Sampling-Bias-Corrected Neural Modeling for Large Corpus
-        Item Recommendations" (RecSys 2019).
-    """
+    """Sample by item popularity, optionally returning logQ correction terms."""
 
     def __init__(
         self,
@@ -49,20 +24,15 @@ class PopularityNegativeSampler(NegativeSampler):
         self.name = "popularity"
         self.logq_correction = logq_correction
 
-        # Apply smoothing to reduce bias towards very popular items
         popularity = np.array(item_popularity, dtype=np.float64)
-        popularity = np.power(
-            popularity + 1e-10, smoothing
-        )  # Add small epsilon to avoid zero
+        popularity = np.power(popularity + 1e-10, smoothing)
         self.sampling_probs = popularity / popularity.sum()
-        # Pre-compute log probabilities for bias correction
         self.log_sampling_probs = np.log(self.sampling_probs + 1e-10)
 
     def sample(
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
     ) -> SamplingResult:
         batch_size = user_ids.size(0)
-        # Over-sample to account for filtering out positives
         oversample = max(self.num_neg_samples * 3, self.num_neg_samples + 50)
         candidates = np.random.choice(
             self.num_items,
@@ -77,14 +47,12 @@ class PopularityNegativeSampler(NegativeSampler):
         for i in range(batch_size):
             positives = self._get_positives(user_ids_np[i])
             row = candidates[i]
-            # Vectorized filtering
             mask = np.isin(row, list(positives), invert=True)
             valid = row[mask]
 
             if len(valid) >= self.num_neg_samples:
                 neg_items[i] = valid[: self.num_neg_samples]
             else:
-                # Rare case: need more samples
                 neg_items[i, : len(valid)] = valid
                 idx = len(valid)
                 while idx < self.num_neg_samples:
