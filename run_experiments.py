@@ -188,10 +188,9 @@ def run_all_experiments(config, strategies=None, num_runs=1):
         print(f"RUN {run_idx + 1}/{len(seeds)} (seed={seed})")
         print(f"{'#' * 60}")
 
-        set_seed(seed)
-
         for strategy in strategies:
             try:
+                set_seed(seed)
                 result = run_experiment(config, strategy, device)
                 result["seed"] = seed
                 result["run"] = run_idx
