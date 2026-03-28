@@ -223,10 +223,10 @@ class InBatchTrainer(Trainer):
             pos_item_ids = pos_item_ids.to(self.device)
             batch_size = user_ids.size(0)
 
+            sample_start = time.time()
             user_emb = self.model.get_user_embedding(user_ids)
             item_emb = self.model.get_item_embedding(pos_item_ids)
 
-            sample_start = time.time()
             logits = torch.matmul(user_emb, item_emb.t())
             logits = logits / self.model.temperature.clamp(min=0.01)
 

@@ -168,7 +168,7 @@ def run_experiment(config, sampling_strategy, device):
 
 
 def run_all_experiments(config, strategies=None, num_runs=1):
-    """Run experiments for all sampling strategies with multiple seeds for statistical significance."""
+    """Run experiments for all sampling strategies with multiple seeds."""
     if strategies is None:
         strategies = [
             "uniform",
@@ -270,14 +270,14 @@ def compute_statistics(all_results):
 
 
 def save_results(all_results, output_dir="results", config=None):
-    """Compare and save results with statistical analysis."""
+    """Compare and save results with summary statistics."""
     os.makedirs(output_dir, exist_ok=True)
 
     # Compute statistics
     stats_results = compute_statistics(all_results)
 
     print("\n" + "=" * 100)
-    print("COMPARISON OF NEGATIVE SAMPLING STRATEGIES (with statistical significance)")
+    print("COMPARISON OF NEGATIVE SAMPLING STRATEGIES (summary statistics)")
     print("=" * 100)
 
     metrics_to_show = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
@@ -393,7 +393,7 @@ def main():
         "--num_runs",
         type=int,
         default=1,
-        help="Number of runs with different seeds for statistical significance",
+        help="Number of runs with different seeds",
     )
     args = parser.parse_args()
 
