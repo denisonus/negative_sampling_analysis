@@ -42,6 +42,7 @@ def get_sampler(
             item_popularity,
             device,
             smoothing=kwargs.get("smoothing", 0.75),
+            logq_correction=kwargs.get("logq_correction", True),
         )
 
     elif strategy == "hard":

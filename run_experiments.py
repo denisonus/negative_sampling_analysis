@@ -110,7 +110,14 @@ def run_experiment(config, sampling_strategy, device):
         item_popularity=item_popularity,
         model=model,
         device=device,
+        candidate_pool_size=config.get("candidate_pool_size", 100),
         hard_ratio=config.get("hard_neg_ratio", 0.5),
+        dns_temperature=config.get("dns_temperature", 0.1),
+        curriculum_start_ratio=config.get("curriculum_start_ratio", 0.0),
+        curriculum_end_ratio=config.get("curriculum_end_ratio", 0.8),
+        curriculum_warmup_epochs=config.get("curriculum_warmup_epochs", 10),
+        tau_plus=config.get("tau_plus", 0.05),
+        smoothing=config.get("smoothing", 0.75),
         logq_correction=config.get("logq_correction", False),
     )
 

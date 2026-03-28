@@ -1,5 +1,6 @@
 """Training Loop for Two-Tower Model."""
 
+import copy
 import torch
 import torch.optim as optim
 import time
@@ -147,7 +148,7 @@ class Trainer:
                     best_epoch = epoch
                     patience_counter = 0
                     # Save best model
-                    self.best_model_state = self.model.state_dict().copy()
+                    self.best_model_state = copy.deepcopy(self.model.state_dict())
                 else:
                     patience_counter += 1
 
@@ -222,10 +223,10 @@ class InBatchTrainer(Trainer):
             pos_item_ids = pos_item_ids.to(self.device)
             batch_size = user_ids.size(0)
 
-            train_start = time.time()
             user_emb = self.model.get_user_embedding(user_ids)
             item_emb = self.model.get_item_embedding(pos_item_ids)
 
+            sample_start = time.time()
             logits = torch.matmul(user_emb, item_emb.t())
             logits = logits / self.model.temperature.clamp(min=0.01)
 
@@ -243,8 +244,11 @@ class InBatchTrainer(Trainer):
             # Keep diagonal (true positive for each user)
             mask.fill_diagonal_(False)
             logits[mask] = float("-inf")
+            epoch_sampling_time += time.time() - sample_start
 
             labels = torch.arange(batch_size, device=self.device)
+
+            train_start = time.time()
             loss = torch.nn.functional.cross_entropy(logits, labels)
 
             self.optimizer.zero_grad(set_to_none=True)
