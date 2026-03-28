@@ -214,7 +214,7 @@ class InBatchTrainer(Trainer):
         self.model.train()
         total_loss = 0
         num_batches = 0
-        epoch_sampling_time = 0  # No separate sampling for in-batch
+        epoch_sampling_time = 0
         epoch_training_time = 0
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
