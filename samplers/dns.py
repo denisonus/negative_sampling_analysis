@@ -79,24 +79,9 @@ class DNSNegativeSampler(NegativeSampler):
         for i in range(batch_size):
             user_id = user_ids_np[i]
             positives = self._positives_array.get(user_id)
-
-            if positives is None or len(positives) == 0:
-                result[i] = all_candidates[i, : self.candidate_pool_size]
-            else:
-                row = all_candidates[i]
-                mask = ~np.isin(row, positives, assume_unique=False)
-                valid = row[mask]
-
-                count = min(len(valid), self.candidate_pool_size)
-                result[i, :count] = valid[:count]
-
-                if count < self.candidate_pool_size:
-                    positives_set = set(positives)
-                    idx = count
-                    while idx < self.candidate_pool_size:
-                        c = np.random.randint(0, self.num_items)
-                        if c not in positives_set:
-                            result[i, idx] = c
-                            idx += 1
+            positives_set = set() if positives is None else set(positives.tolist())
+            result[i] = self._sample_unique_valid_items(
+                all_candidates[i], positives_set, self.candidate_pool_size
+            )
 
         return torch.from_numpy(result).to(self.device)

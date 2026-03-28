@@ -1,5 +1,6 @@
 """Mixed negative sampling."""
 
+import numpy as np
 import torch
 from typing import Set, Dict, Optional
 
@@ -58,4 +59,18 @@ class MixedNegativeSampler(NegativeSampler):
         else:
             hard_negs = torch.empty(batch_size, 0, dtype=torch.long, device=self.device)
 
-        return torch.cat([hard_negs, random_negs], dim=1)
+        combined = torch.cat([hard_negs, random_negs], dim=1)
+        if combined.size(1) == 0:
+            return combined
+
+        deduped = np.zeros((batch_size, self.num_neg_samples), dtype=np.int64)
+        user_ids_np = user_ids.cpu().numpy()
+        combined_np = combined.cpu().numpy()
+
+        for i in range(batch_size):
+            positives = self._get_positives(user_ids_np[i])
+            deduped[i] = self._sample_unique_valid_items(
+                combined_np[i], positives, self.num_neg_samples
+            )
+
+        return torch.from_numpy(deduped).to(self.device)

@@ -78,7 +78,21 @@ class CurriculumNegativeSampler(NegativeSampler):
         else:
             hard_negs = torch.empty(batch_size, 0, dtype=torch.long, device=self.device)
 
-        return torch.cat([hard_negs, random_negs], dim=1)
+        combined = torch.cat([hard_negs, random_negs], dim=1)
+        if combined.size(1) == 0:
+            return combined
+
+        deduped = np.zeros((batch_size, self.num_neg_samples), dtype=np.int64)
+        user_ids_np = user_ids.cpu().numpy()
+        combined_np = combined.cpu().numpy()
+
+        for i in range(batch_size):
+            positives = self._get_positives(user_ids_np[i])
+            deduped[i] = self._sample_unique_valid_items(
+                combined_np[i], positives, self.num_neg_samples
+            )
+
+        return torch.from_numpy(deduped).to(self.device)
 
     def _sample_hard(self, user_ids: torch.Tensor, num_hard: int) -> torch.Tensor:
         """Sample hard negatives using model scores."""
@@ -117,17 +131,8 @@ class CurriculumNegativeSampler(NegativeSampler):
 
         for i in range(batch_size):
             positives = self._get_positives(user_ids_np[i])
-            row = candidates[i]
-            mask = np.isin(row, list(positives), invert=True)
-            valid = row[mask]
-            count = min(len(valid), self.candidate_pool_size)
-            result[i, :count] = valid[:count]
-            if count < self.candidate_pool_size:
-                idx = count
-                while idx < self.candidate_pool_size:
-                    c = np.random.randint(0, self.num_items)
-                    if c not in positives:
-                        result[i, idx] = c
-                        idx += 1
+            result[i] = self._sample_unique_valid_items(
+                candidates[i], positives, self.candidate_pool_size
+            )
 
         return torch.from_numpy(result).to(self.device)

@@ -32,19 +32,8 @@ class UniformNegativeSampler(NegativeSampler):
 
         for i in range(batch_size):
             positives = self._get_positives(user_ids_np[i])
-            row = candidates[i]
-            mask = np.isin(row, list(positives), invert=True)
-            valid = row[mask]
-
-            if len(valid) >= self.num_neg_samples:
-                neg_items[i] = valid[: self.num_neg_samples]
-            else:
-                neg_items[i, : len(valid)] = valid
-                idx = len(valid)
-                while idx < self.num_neg_samples:
-                    c = np.random.randint(0, self.num_items)
-                    if c not in positives:
-                        neg_items[i, idx] = c
-                        idx += 1
+            neg_items[i] = self._sample_unique_valid_items(
+                candidates[i], positives, self.num_neg_samples
+            )
 
         return torch.from_numpy(neg_items).to(self.device)

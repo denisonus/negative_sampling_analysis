@@ -76,18 +76,11 @@ class HardNegativeSampler(NegativeSampler):
 
         for i in range(batch_size):
             positives = self._get_positives(user_ids_np[i])
-            row = candidates[i]
-            mask = np.isin(row, list(positives), invert=True)
-            valid = row[mask]
-            count = min(len(valid), self.candidate_pool_size)
-            result[i, :count] = valid[:count]
+            unique_candidates = self._sample_unique_valid_items(
+                candidates[i], positives, self.candidate_pool_size
+            )
+            count = len(unique_candidates)
+            result[i, :count] = unique_candidates
             valid_counts[i] = count
-            if count < self.candidate_pool_size:
-                idx = count
-                while idx < self.candidate_pool_size:
-                    c = np.random.randint(0, self.num_items)
-                    if c not in positives:
-                        result[i, idx] = c
-                        idx += 1
 
         return torch.from_numpy(result).to(self.device), valid_counts
