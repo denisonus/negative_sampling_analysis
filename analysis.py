@@ -1,5 +1,7 @@
 """Analysis and Visualization for experimental results."""
 
+import argparse
+import csv
 import os
 import sys
 from datetime import datetime
@@ -14,10 +16,50 @@ def load_results(results_file):
         return json.load(f)
 
 
+def _finalize_figure(fig, output_path=None):
+    """Save or display a figure, then close it."""
+    if output_path:
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+        plt.close(fig)
+
+
+def _sorted_strategies(stats_data, metric="ndcg@10"):
+    return sorted(
+        stats_data.keys(),
+        key=lambda strategy: stats_data[strategy]["metrics"].get(metric, {}).get("mean", 0),
+        reverse=True,
+    )
+
+
+def _safe_normalize(values):
+    values = np.asarray(values, dtype=np.float64)
+    if values.size == 0:
+        return values
+    min_value = values.min()
+    max_value = values.max()
+    if np.isclose(min_value, max_value):
+        return np.full_like(values, 0.5)
+    return (values - min_value) / (max_value - min_value)
+
+
+def _get_metric_value(strategy_stats, metric):
+    """Read a metric value from either relevance or quality metrics."""
+    if metric in strategy_stats.get("metrics", {}):
+        return strategy_stats["metrics"][metric]["mean"]
+    if metric in strategy_stats.get("quality_metrics", {}):
+        return strategy_stats["quality_metrics"][metric]["mean"]
+    if metric in strategy_stats.get("timing", {}):
+        return strategy_stats["timing"][metric]["mean"]
+    return 0.0
+
+
 def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
     """Create bar chart comparing strategies on a specific metric."""
     stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
+    strategies = _sorted_strategies(stats_data, metric=metric)
     values = [
         stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
     ]
@@ -51,9 +93,7 @@ def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
         )
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(plt.gcf(), output_path)
 
 
 def plot_all_metrics(
@@ -61,7 +101,7 @@ def plot_all_metrics(
 ):
     """Create grouped bar chart comparing all metrics with error bars."""
     stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
+    strategies = _sorted_strategies(stats_data)
 
     n_strategies, n_metrics = len(strategies), len(metrics)
 
@@ -97,9 +137,7 @@ def plot_all_metrics(
     ax.legend(loc="upper right")
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(fig, output_path)
 
 
 def plot_quality_metrics(
@@ -114,7 +152,7 @@ def plot_quality_metrics(
 ):
     """Create grouped bar chart for recommendation-quality metrics."""
     stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
+    strategies = _sorted_strategies(stats_data)
 
     n_strategies, n_metrics = len(strategies), len(metrics)
     fig, ax = plt.subplots(figsize=(14, 7))
@@ -151,9 +189,7 @@ def plot_quality_metrics(
     ax.legend(loc="upper right")
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(fig, output_path)
 
 
 def plot_quality_tradeoff(
@@ -161,7 +197,7 @@ def plot_quality_tradeoff(
 ):
     """Plot ranking quality against recommendation-quality tradeoffs."""
     stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
+    strategies = _sorted_strategies(stats_data, metric=y_metric)
 
     x_values = [
         stats_data[s].get("quality_metrics", {}).get(x_metric, {}).get("mean", 0)
@@ -188,9 +224,135 @@ def plot_quality_tradeoff(
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(plt.gcf(), output_path)
+
+
+def plot_quality_small_multiples(
+    results,
+    metrics=None,
+    output_path=None,
+):
+    """Plot one small, readable bar chart per quality metric."""
+    if metrics is None:
+        metrics = [
+            "item_coverage@10",
+            "novelty@10",
+            "tail_percentage@10",
+            "personalization@10",
+        ]
+
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    axes = axes.flatten()
+    colors = plt.colormaps["Set3"](np.linspace(0, 1, len(metrics)))
+
+    for idx, metric in enumerate(metrics):
+        ax = axes[idx]
+        values = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("mean", 0)
+            for s in strategies
+        ]
+        errors = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("std", 0)
+            for s in strategies
+        ]
+
+        bars = ax.bar(
+            strategies,
+            values,
+            color=colors[idx],
+            edgecolor="black",
+            yerr=errors,
+            capsize=4,
+        )
+        ax.set_title(metric)
+        ax.tick_params(axis="x", rotation=45)
+        ax.grid(True, axis="y", alpha=0.2)
+
+        value_offset = max(values) * 0.02 if values and max(values) > 0 else 0.01
+        for bar, value in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + value_offset,
+                f"{value:.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+
+def plot_metric_tradeoff(
+    results,
+    x_metric,
+    y_metric="ndcg@10",
+    output_path=None,
+    title=None,
+):
+    """Generic tradeoff scatter for thesis comparisons."""
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data, metric=y_metric)
+
+    x_values = [_get_metric_value(stats_data[s], x_metric) for s in strategies]
+    y_values = [_get_metric_value(stats_data[s], y_metric) for s in strategies]
+    sizes = [
+        max(50, stats_data[s].get("timing", {}).get("total_time", {}).get("mean", 0) * 8)
+        for s in strategies
+    ]
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ax.scatter(x_values, y_values, s=sizes, color="steelblue", edgecolor="black")
+
+    for strategy, x_value, y_value in zip(strategies, x_values, y_values):
+        ax.text(x_value, y_value, strategy, fontsize=9, ha="left", va="bottom")
+
+    ax.set_xlabel(x_metric)
+    ax.set_ylabel(y_metric)
+    ax.set_title(title or f"Tradeoff: {y_metric} vs {x_metric}")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+
+def plot_ablation_delta(
+    results, baseline="uniform", metric="ndcg@10", output_path=None
+):
+    """Plot metric deltas relative to the chosen baseline strategy."""
+    stats_data = results["statistics"]
+    if baseline not in stats_data:
+        return None
+
+    strategies = [s for s in _sorted_strategies(stats_data, metric=metric) if s != baseline]
+    baseline_value = _get_metric_value(stats_data[baseline], metric)
+    deltas = [_get_metric_value(stats_data[s], metric) - baseline_value for s in strategies]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors = ["forestgreen" if value >= 0 else "indianred" for value in deltas]
+    bars = ax.bar(strategies, deltas, color=colors, edgecolor="black")
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.set_title(f"{metric} Delta vs {baseline}")
+    ax.set_ylabel("Delta")
+    ax.tick_params(axis="x", rotation=45)
+    ax.grid(True, axis="y", alpha=0.2)
+
+    offset = max(abs(v) for v in deltas) * 0.05 if deltas and max(abs(v) for v in deltas) > 0 else 0.002
+    for bar, value in zip(bars, deltas):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + (offset if value >= 0 else -offset),
+            f"{value:+.3f}",
+            ha="center",
+            va="bottom" if value >= 0 else "top",
+            fontsize=8,
+        )
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return deltas
 
 
 def _extract_valid_series(valid_history, metric="ndcg@10"):
@@ -270,9 +432,7 @@ def plot_training_curves(results, output_path=None):
     axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(fig, output_path)
 
 
 def plot_timing_comparison(results, output_path=None):
@@ -282,7 +442,7 @@ def plot_timing_comparison(results, output_path=None):
         return
 
     stats_data = results["statistics"]
-    strategies = list(stats_data.keys())
+    strategies = _sorted_strategies(stats_data)
 
     fig, ax = plt.subplots(figsize=(12, 6))
     x = np.arange(len(strategies))
@@ -308,9 +468,7 @@ def plot_timing_comparison(results, output_path=None):
     ax.legend()
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(fig, output_path)
 
 
 def plot_convergence_speed(
@@ -382,11 +540,371 @@ def plot_convergence_speed(
     plt.xticks(rotation=45, ha="right")
 
     plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    _finalize_figure(fig, output_path)
 
     return convergence_epochs
+
+
+def plot_thesis_dashboard(results, output_path=None):
+    """Create a compact dashboard with thesis-critical comparisons."""
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data)
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+
+    # Relevance overview
+    relevance_metrics = ["ndcg@10", "recall@10", "mrr@10", "hit@10"]
+    x = np.arange(len(strategies))
+    width = 0.8 / len(relevance_metrics)
+    colors = plt.colormaps["Set2"](np.linspace(0, 1, len(relevance_metrics)))
+    for idx, metric in enumerate(relevance_metrics):
+        values = [
+            stats_data[s]["metrics"].get(metric, {}).get("mean", 0) for s in strategies
+        ]
+        offset = (idx - len(relevance_metrics) / 2 + 0.5) * width
+        axes[0, 0].bar(
+            x + offset,
+            values,
+            width,
+            color=colors[idx],
+            label=metric,
+        )
+    axes[0, 0].set_title("Relevance Metrics (@10)")
+    axes[0, 0].set_xticks(x)
+    axes[0, 0].set_xticklabels(strategies, rotation=45, ha="right")
+    axes[0, 0].legend(loc="upper right")
+    axes[0, 0].grid(True, axis="y", alpha=0.2)
+
+    total_times = [
+        stats_data[s]["timing"]["total_time"]["mean"] for s in strategies
+    ]
+    ndcg_values = [
+        stats_data[s]["metrics"]["ndcg@10"]["mean"] for s in strategies
+    ]
+    axes[0, 1].scatter(total_times, ndcg_values, color="steelblue", edgecolor="black")
+    for strategy, total_time, ndcg_value in zip(strategies, total_times, ndcg_values):
+        axes[0, 1].text(
+            total_time,
+            ndcg_value,
+            strategy,
+            fontsize=9,
+            ha="left",
+            va="bottom",
+        )
+    axes[0, 1].set_title("Efficiency Frontier")
+    axes[0, 1].set_xlabel("Total Time (s)")
+    axes[0, 1].set_ylabel("NDCG@10")
+    axes[0, 1].grid(True, alpha=0.3)
+
+    coverage_values = [
+        stats_data[s].get("quality_metrics", {}).get("item_coverage@10", {}).get("mean", 0)
+        for s in strategies
+    ]
+    axes[1, 0].scatter(
+        coverage_values, ndcg_values, color="darkorange", edgecolor="black"
+    )
+    for strategy, coverage_value, ndcg_value in zip(
+        strategies, coverage_values, ndcg_values
+    ):
+        axes[1, 0].text(
+            coverage_value,
+            ndcg_value,
+            strategy,
+            fontsize=9,
+            ha="left",
+            va="bottom",
+        )
+    axes[1, 0].set_title("Relevance vs Coverage")
+    axes[1, 0].set_xlabel("item_coverage@10")
+    axes[1, 0].set_ylabel("NDCG@10")
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # Sampling vs training cost
+    sampling_times = [
+        stats_data[s]["timing"]["sampling_time"]["mean"] for s in strategies
+    ]
+    training_times = [
+        stats_data[s]["timing"]["training_time"]["mean"] for s in strategies
+    ]
+    axes[1, 1].barh(strategies, sampling_times, color="coral", label="Sampling")
+    axes[1, 1].barh(
+        strategies,
+        training_times,
+        left=sampling_times,
+        color="steelblue",
+        label="Training",
+    )
+    axes[1, 1].set_title("Time Breakdown")
+    axes[1, 1].set_xlabel("Time (s)")
+    axes[1, 1].legend(loc="lower right")
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+
+def plot_training_dynamics(
+    results, target_metric="ndcg@10", threshold_percentile=0.9, output_path=None
+):
+    """Plot validation dynamics and convergence speed in one compact figure."""
+    if "raw_results" not in results:
+        return None
+
+    raw_results = results["raw_results"]
+    strategies = list(raw_results.keys())
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
+
+    convergence = {}
+
+    for idx, (strategy, runs) in enumerate(raw_results.items()):
+        valid_series = [
+            _extract_valid_series(run.get("valid_metrics", []), metric=target_metric)
+            for run in runs
+            if run.get("valid_metrics")
+        ]
+        valid_series = [series for series in valid_series if series]
+        if not valid_series:
+            continue
+
+        min_len = min(len(series) for series in valid_series)
+        valid_array = np.array([series[:min_len] for series in valid_series])
+        mean_valid = np.mean(valid_array, axis=0)
+        std_valid = np.std(valid_array, axis=0)
+        epochs = np.arange(1, len(mean_valid) + 1)
+
+        axes[0].plot(epochs, mean_valid, label=strategy, color=colors[idx])
+        axes[0].fill_between(
+            epochs,
+            mean_valid - std_valid,
+            mean_valid + std_valid,
+            alpha=0.2,
+            color=colors[idx],
+        )
+
+        epochs_to_converge = []
+        for series in valid_series:
+            best_value = max(series)
+            if best_value <= 0:
+                continue
+            threshold = best_value * threshold_percentile
+            for epoch, value in enumerate(series, start=1):
+                if value >= threshold:
+                    epochs_to_converge.append(epoch)
+                    break
+        if epochs_to_converge:
+            convergence[strategy] = {
+                "mean": float(np.mean(epochs_to_converge)),
+                "std": float(np.std(epochs_to_converge)),
+            }
+
+    axes[0].set_title(f"Validation {target_metric.upper()} Dynamics")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel(target_metric)
+    axes[0].legend(loc="best")
+    axes[0].grid(True, alpha=0.3)
+
+    if convergence:
+        conv_strategies = list(convergence.keys())
+        means = [convergence[s]["mean"] for s in conv_strategies]
+        stds = [convergence[s]["std"] for s in conv_strategies]
+        bars = axes[1].bar(
+            conv_strategies,
+            means,
+            yerr=stds,
+            capsize=4,
+            color="teal",
+            edgecolor="black",
+        )
+        for bar, mean in zip(bars, means):
+            axes[1].text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.1,
+                f"{mean:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+        axes[1].set_title(
+            f"Epochs to {threshold_percentile * 100:.0f}% of Best {target_metric.upper()}"
+        )
+        axes[1].set_ylabel("Epoch")
+        axes[1].tick_params(axis="x", rotation=45)
+        axes[1].grid(True, axis="y", alpha=0.2)
+    else:
+        axes[1].axis("off")
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return convergence
+
+
+def save_summary_table(results, output_path):
+    """Persist a compact strategy comparison table."""
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data)
+    rows = []
+
+    for strategy in strategies:
+        strategy_stats = stats_data[strategy]
+        total_time = strategy_stats["timing"]["total_time"]["mean"]
+        sampling_time = strategy_stats["timing"]["sampling_time"]["mean"]
+        rows.append(
+            {
+                "strategy": strategy,
+                "ndcg@10": strategy_stats["metrics"].get("ndcg@10", {}).get("mean", 0),
+                "recall@10": strategy_stats["metrics"].get("recall@10", {}).get("mean", 0),
+                "mrr@10": strategy_stats["metrics"].get("mrr@10", {}).get("mean", 0),
+                "hit@10": strategy_stats["metrics"].get("hit@10", {}).get("mean", 0),
+                "item_coverage@10": strategy_stats.get("quality_metrics", {})
+                .get("item_coverage@10", {})
+                .get("mean", 0),
+                "novelty@10": strategy_stats.get("quality_metrics", {})
+                .get("novelty@10", {})
+                .get("mean", 0),
+                "tail_percentage@10": strategy_stats.get("quality_metrics", {})
+                .get("tail_percentage@10", {})
+                .get("mean", 0),
+                "personalization@10": strategy_stats.get("quality_metrics", {})
+                .get("personalization@10", {})
+                .get("mean", 0),
+                "total_time": total_time,
+                "sampling_time": sampling_time,
+                "training_time": strategy_stats["timing"]["training_time"]["mean"],
+                "sampling_share": (sampling_time / total_time) if total_time > 0 else 0.0,
+            }
+        )
+
+    if not rows:
+        return
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def save_significance_table(results, output_path, metric="ndcg@10", baseline="uniform"):
+    """Persist paired significance results when multi-run data is available."""
+    table = statistical_significance_test(results, metric=metric, baseline=baseline)
+    if not table:
+        return
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(table[0].keys()))
+        writer.writeheader()
+        writer.writerows(table)
+
+
+def _load_metadata_for_results(results_file):
+    """Load sibling metadata.json if it exists."""
+    metadata_path = os.path.join(os.path.dirname(results_file), "metadata.json")
+    if not os.path.exists(metadata_path):
+        return {}
+    with open(metadata_path, "r") as metadata_file:
+        return json.load(metadata_file)
+
+
+def plot_parameter_sweep(
+    results_files,
+    strategy,
+    metric="ndcg@10",
+    param=None,
+    output_path=None,
+    csv_path=None,
+):
+    """Plot a sampler knob sweep across multiple finished runs."""
+    bundles = []
+    for results_file in results_files:
+        results = load_results(results_file)
+        metadata = _load_metadata_for_results(results_file)
+        bundles.append(
+            {
+                "results_file": results_file,
+                "results": results,
+                "metadata": metadata,
+                "config": metadata.get("config", {}),
+            }
+        )
+
+    if not bundles:
+        return None
+
+    if param is None:
+        ignored_keys = {"seed", "device", "metrics", "topk", "valid_metric"}
+        candidate_params = []
+        all_keys = set().union(*(bundle["config"].keys() for bundle in bundles))
+        for key in sorted(all_keys):
+            if key in ignored_keys:
+                continue
+            values = {json.dumps(bundle["config"].get(key, None), sort_keys=True) for bundle in bundles}
+            if len(values) > 1:
+                candidate_params.append(key)
+        if len(candidate_params) != 1:
+            raise ValueError(
+                "Could not infer a single varying parameter. Pass --sweep_param explicitly."
+            )
+        param = candidate_params[0]
+
+    rows = []
+    for bundle in bundles:
+        stats = bundle["results"].get("statistics", {})
+        if strategy not in stats:
+            continue
+        strategy_stats = stats[strategy]
+        rows.append(
+            {
+                "param": bundle["config"].get(param),
+                "metric": _get_metric_value(strategy_stats, metric),
+                "results_file": bundle["results_file"],
+            }
+        )
+
+    if not rows:
+        raise ValueError(f"Strategy '{strategy}' not found in provided result files.")
+
+    def sort_key(row):
+        value = row["param"]
+        if isinstance(value, bool):
+            return (0, int(value))
+        if isinstance(value, (int, float)):
+            return (0, float(value))
+        return (1, str(value))
+
+    rows.sort(key=sort_key)
+
+    x_labels = [str(row["param"]) for row in rows]
+    x_positions = np.arange(len(rows))
+    y_values = [row["metric"] for row in rows]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(x_positions, y_values, marker="o", color="steelblue", linewidth=2)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    ax.set_xlabel(param)
+    ax.set_ylabel(metric)
+    ax.set_title(f"{strategy}: {metric} across {param}")
+    ax.grid(True, alpha=0.3)
+
+    for x_position, row in zip(x_positions, rows):
+        ax.text(
+            x_position,
+            row["metric"],
+            f"{row['metric']:.3f}",
+            fontsize=8,
+            ha="center",
+            va="bottom",
+        )
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+    if csv_path:
+        with open(csv_path, "w", newline="") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+
+    return rows
 
 
 def statistical_significance_test(results, metric="ndcg@10", baseline="uniform"):
@@ -453,61 +971,91 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
 
 
 def generate_full_report(results_file, output_dir=None):
-    """Generate a full analysis report with all visualizations."""
+    """Generate the compact thesis-oriented analysis bundle."""
 
     if output_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = os.path.join("results", f"analysis_{timestamp}")
 
+    plt.switch_backend("Agg")
     os.makedirs(output_dir, exist_ok=True)
 
     results = load_results(results_file)
-
-    # Metric comparison
-    plot_all_metrics(results, output_path=os.path.join(output_dir, "comparison.png"))
-
-    # Individual metrics
-    for metric in ["ndcg@10", "recall@10", "hit@10", "mrr@10"]:
-        plot_metric_comparison(
+    save_summary_table(results, os.path.join(output_dir, "summary_metrics.csv"))
+    plot_thesis_dashboard(results, output_path=os.path.join(output_dir, "dashboard.png"))
+    plot_all_metrics(
+        results, output_path=os.path.join(output_dir, "relevance_metrics.png")
+    )
+    has_quality_metrics = any(
+        stats_data.get("quality_metrics") for stats_data in results["statistics"].values()
+    )
+    if has_quality_metrics:
+        plot_quality_small_multiples(
+            results, output_path=os.path.join(output_dir, "quality_metrics.png")
+        )
+        plot_metric_tradeoff(
             results,
-            metric=metric,
-            output_path=os.path.join(output_dir, f"{metric.replace('@', '_')}.png"),
+            x_metric="item_coverage@10",
+            y_metric="ndcg@10",
+            output_path=os.path.join(output_dir, "ndcg_vs_coverage.png"),
+            title="NDCG@10 vs Item Coverage@10",
         )
+    plot_metric_tradeoff(
+        results,
+        x_metric="total_time",
+        y_metric="ndcg@10",
+        output_path=os.path.join(output_dir, "ndcg_vs_time.png"),
+        title="NDCG@10 vs Total Time",
+    )
+    plot_ablation_delta(
+        results,
+        baseline="uniform",
+        metric="ndcg@10",
+        output_path=os.path.join(output_dir, "ndcg10_delta_vs_uniform.png"),
+    )
 
-    # Training curves
     if "raw_results" in results:
-        plot_training_curves(
-            results, output_path=os.path.join(output_dir, "training_curves.png")
-        )
-        plot_convergence_speed(
-            results, output_path=os.path.join(output_dir, "convergence.png")
+        plot_training_dynamics(
+            results, output_path=os.path.join(output_dir, "training_dynamics.png")
         )
 
-    # Timing
-    if "statistics" in results:
-        plot_timing_comparison(
-            results, output_path=os.path.join(output_dir, "timing.png")
-        )
-        has_quality_metrics = any(
-            stats_data.get("quality_metrics") for stats_data in results["statistics"].values()
-        )
-        if has_quality_metrics:
-            plot_quality_metrics(
-                results, output_path=os.path.join(output_dir, "quality_metrics.png")
-            )
-            plot_quality_tradeoff(
-                results, output_path=os.path.join(output_dir, "quality_tradeoff.png")
-            )
-        statistical_significance_test(results)
+    save_significance_table(
+        results, os.path.join(output_dir, "significance_ndcg10.csv")
+    )
 
-    print(f"Analysis files saved to: {output_dir}")
+    print(f"Analysis bundle saved to: {output_dir}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        results_file = sys.argv[1]
-        output_dir = sys.argv[2] if len(sys.argv) > 2 else None
-        generate_full_report(results_file, output_dir)
+    parser = argparse.ArgumentParser(description="Generate experiment analysis plots.")
+    parser.add_argument(
+        "results_files",
+        nargs="+",
+        help="One or more results.json files.",
+    )
+    parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--sweep_strategy", type=str, default=None)
+    parser.add_argument("--sweep_metric", type=str, default="ndcg@10")
+    parser.add_argument("--sweep_param", type=str, default=None)
+    args = parser.parse_args()
+
+    if len(args.results_files) == 1 and args.sweep_strategy is None:
+        generate_full_report(args.results_files[0], args.output_dir)
     else:
-        print("Usage: python analysis.py <results_file.json> [output_dir]")
-        print("If output_dir is not specified, a timestamped folder will be created.")
+        output_dir = args.output_dir or os.path.join(
+            os.path.dirname(args.results_files[0]), "sweep_analysis"
+        )
+        os.makedirs(output_dir, exist_ok=True)
+        if args.sweep_strategy is None:
+            raise SystemExit(
+                "Multiple results files require --sweep_strategy to build a parameter sweep."
+            )
+        plt.switch_backend("Agg")
+        plot_parameter_sweep(
+            args.results_files,
+            strategy=args.sweep_strategy,
+            metric=args.sweep_metric,
+            param=args.sweep_param,
+            output_path=os.path.join(output_dir, "parameter_sweep.png"),
+            csv_path=os.path.join(output_dir, "parameter_sweep.csv"),
+        )

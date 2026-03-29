@@ -427,6 +427,13 @@ def save_results(all_results, output_dir="results", config=None):
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
+    try:
+        from analysis import generate_full_report
+
+        generate_full_report(results_file, output_dir=run_output_dir)
+    except Exception as e:
+        print(f"Warning: automatic analysis generation failed: {e}")
+
     print(f"\nResults saved to: {run_output_dir}")
     return stats_results, run_output_dir
 
