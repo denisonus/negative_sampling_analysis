@@ -49,6 +49,17 @@ class Evaluator:
             if name in self.METRIC_CLASSES
         }
 
+    def _empty_results(self):
+        return {f"{m}@{k}": 0.0 for m in self.metrics for k in self.topk}
+
+    def _empty_rankings(self):
+        return {
+            "user_ids": np.array([], dtype=np.int64),
+            "topk_items": np.empty((0, self.max_k), dtype=np.int64),
+            "pos_index": np.empty((0, self.max_k), dtype=bool),
+            "pos_len": np.array([], dtype=np.int64),
+        }
+
     def _extract_interactions(self, test_data):
         """Extract user-item interactions from test data."""
         test_user_items = defaultdict(set)
@@ -66,13 +77,13 @@ class Evaluator:
 
         return test_user_items
 
-    def evaluate(self, model, test_data):
-        """Evaluate model on test data."""
+    def rank(self, model, test_data):
+        """Return masked top-k rankings and hit indicators for evaluation."""
         model.eval()
         test_user_items = self._extract_interactions(test_data)
 
         if not test_user_items:
-            return {f"{m}@{k}": 0.0 for m in self.metrics for k in self.topk}
+            return self._empty_rankings()
 
         uid2history = (
             test_data.uid2history_item if hasattr(test_data, "uid2history_item") else {}
@@ -80,7 +91,7 @@ class Evaluator:
 
         users_list = list(test_user_items.keys())
         batch_size = 256
-        all_pos_index, all_pos_len = [], []
+        all_user_ids, all_topk_items, all_pos_index, all_pos_len = [], [], [], []
 
         with torch.no_grad():
             # Pre-compute all item embeddings once
@@ -119,6 +130,8 @@ class Evaluator:
                 for i, user in enumerate(batch_users):
                     ground_truth = test_user_items[user]
                     if ground_truth:
+                        all_user_ids.append(int(user))
+                        all_topk_items.append(topk_idx[i])
                         pos_row = np.array(
                             [item in ground_truth for item in topk_idx[i]]
                         )
@@ -126,10 +139,22 @@ class Evaluator:
                         all_pos_len.append(len(ground_truth))
 
         if not all_pos_index:
-            return {f"{m}@{k}": 0.0 for m in self.metrics for k in self.topk}
+            return self._empty_rankings()
 
-        pos_index = np.array(all_pos_index)
-        pos_len = np.array(all_pos_len)
+        return {
+            "user_ids": np.array(all_user_ids, dtype=np.int64),
+            "topk_items": np.array(all_topk_items, dtype=np.int64),
+            "pos_index": np.array(all_pos_index),
+            "pos_len": np.array(all_pos_len),
+        }
+
+    def evaluate_from_rankings(self, rankings):
+        """Compute ranking metrics from precomputed top-k rankings."""
+        pos_index = rankings["pos_index"]
+        pos_len = rankings["pos_len"]
+
+        if pos_index.size == 0:
+            return self._empty_results()
 
         results = {}
         for metric_name, metric_instance in self.metric_instances.items():
@@ -144,3 +169,7 @@ class Evaluator:
                 results[f"{metric_name}@{k}"] = float(avg_values[idx])
 
         return results
+
+    def evaluate(self, model, test_data):
+        """Evaluate model on test data."""
+        return self.evaluate_from_rankings(self.rank(model, test_data))

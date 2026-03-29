@@ -24,7 +24,7 @@ from utils import (
     Trainer,
     InBatchTrainer,
 )
-from evaluation import Evaluator
+from evaluation import Evaluator, compute_quality_metrics
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -59,7 +59,7 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def run_experiment(config, sampling_strategy, device):
+def run_experiment(config, sampling_strategy, device, seed=None):
     """Run a single experiment with specified sampling strategy."""
     print(f"\n{'=' * 60}")
     print(f"Running experiment with {sampling_strategy} sampling")
@@ -144,16 +144,28 @@ def run_experiment(config, sampling_strategy, device):
     )
 
     print("\nFinal Test Evaluation...")
-    test_metrics = evaluator.evaluate(model, test_data)
+    test_rankings = evaluator.rank(model, test_data)
+    test_metrics = evaluator.evaluate_from_rankings(test_rankings)
+    quality_metrics = compute_quality_metrics(
+        test_rankings["topk_items"],
+        item_popularity=item_popularity,
+        num_items=num_items,
+        topk=config.get("topk", [5, 10, 20]),
+        seed=config.get("seed", 42) if seed is None else seed,
+    )
 
     print(f"\nTest Results for {sampling_strategy}:")
     for metric, value in sorted(test_metrics.items()):
+        print(f"  {metric}: {value:.4f}")
+    print("Quality Metrics:")
+    for metric, value in sorted(quality_metrics.items()):
         print(f"  {metric}: {value:.4f}")
 
     return {
         "strategy": sampling_strategy,
         "train_history": train_history,
         "test_metrics": test_metrics,
+        "quality_metrics": quality_metrics,
         "timing": {
             "total_time": train_history.get("total_time", 0),
             "total_sampling_time": train_history.get("total_sampling_time", 0),
@@ -198,7 +210,7 @@ def run_all_experiments(config, strategies=None, num_runs=1):
         for strategy in strategies:
             try:
                 set_seed(seed)
-                result = run_experiment(config, strategy, device)
+                result = run_experiment(config, strategy, device, seed=seed)
                 result["seed"] = seed
                 result["run"] = run_idx
                 all_results[strategy].append(result)
@@ -215,12 +227,32 @@ def compute_statistics(all_results):
     """Compute mean, std, and confidence intervals for metrics across runs."""
     stats_results = {}
 
+    def summarize_values(values):
+        values = np.array(values, dtype=np.float64)
+        mean = np.mean(values)
+        std = np.std(values)
+
+        if len(values) > 1:
+            ci = stats.t.interval(0.95, len(values) - 1, loc=mean, scale=stats.sem(values))
+            ci_lower, ci_upper = ci
+        else:
+            ci_lower, ci_upper = mean, mean
+
+        return {
+            "mean": float(mean),
+            "std": float(std),
+            "ci_lower": float(ci_lower),
+            "ci_upper": float(ci_upper),
+            "values": [float(v) for v in values],
+        }
+
     for strategy, runs in all_results.items():
         if not runs:
             continue
 
         # Collect all metrics across runs
         metrics_values = {}
+        quality_values = {}
         timing_values = {"total_time": [], "sampling_time": [], "training_time": []}
 
         for run in runs:
@@ -229,34 +261,28 @@ def compute_statistics(all_results):
                     metrics_values[metric] = []
                 metrics_values[metric].append(value)
 
+            for metric, value in run.get("quality_metrics", {}).items():
+                if metric not in quality_values:
+                    quality_values[metric] = []
+                quality_values[metric].append(value)
+
             timing_values["total_time"].append(run["timing"]["total_time"])
             timing_values["sampling_time"].append(run["timing"]["total_sampling_time"])
             timing_values["training_time"].append(run["timing"]["total_training_time"])
 
         # Compute statistics
-        stats_results[strategy] = {"metrics": {}, "timing": {}, "num_runs": len(runs)}
+        stats_results[strategy] = {
+            "metrics": {},
+            "quality_metrics": {},
+            "timing": {},
+            "num_runs": len(runs),
+        }
 
         for metric, values in metrics_values.items():
-            values = np.array(values)
-            mean = np.mean(values)
-            std = np.std(values)
+            stats_results[strategy]["metrics"][metric] = summarize_values(values)
 
-            # 95% confidence interval
-            if len(values) > 1:
-                ci = stats.t.interval(
-                    0.95, len(values) - 1, loc=mean, scale=stats.sem(values)
-                )
-                ci_lower, ci_upper = ci
-            else:
-                ci_lower, ci_upper = mean, mean
-
-            stats_results[strategy]["metrics"][metric] = {
-                "mean": float(mean),
-                "std": float(std),
-                "ci_lower": float(ci_lower),
-                "ci_upper": float(ci_upper),
-                "values": [float(v) for v in values],
-            }
+        for metric, values in quality_values.items():
+            stats_results[strategy]["quality_metrics"][metric] = summarize_values(values)
 
         # Timing statistics
         for timing_key, values in timing_values.items():
@@ -281,6 +307,12 @@ def save_results(all_results, output_dir="results", config=None):
     print("=" * 100)
 
     metrics_to_show = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
+    quality_metrics_to_show = [
+        "item_coverage@10",
+        "novelty@10",
+        "tail_percentage@10",
+        "personalization@10",
+    ]
 
     # Header
     header = f"{'Strategy':<15}"
@@ -308,6 +340,26 @@ def save_results(all_results, output_dir="results", config=None):
         )
         print(row)
 
+    if any(stats_data["quality_metrics"] for stats_data in stats_results.values()):
+        print("\n" + "=" * 100)
+        print("RECOMMENDATION QUALITY METRICS (@10)")
+        print("=" * 100)
+        header = f"{'Strategy':<15}"
+        for metric in quality_metrics_to_show:
+            header += f"{metric:<24}"
+        print(header)
+        print("-" * 100)
+
+        for strategy, stats_data in stats_results.items():
+            row = f"{strategy:<15}"
+            for metric in quality_metrics_to_show:
+                if metric in stats_data["quality_metrics"]:
+                    m = stats_data["quality_metrics"][metric]
+                    row += f"{m['mean']:.4f}±{m['std']:.4f}   "
+                else:
+                    row += f"{'N/A':<24}"
+            print(row)
+
     # Save to JSON
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -324,6 +376,7 @@ def save_results(all_results, output_dir="results", config=None):
                 {
                     "seed": r["seed"],
                     "test_metrics": r["test_metrics"],
+                    "quality_metrics": r.get("quality_metrics", {}),
                     "timing": r["timing"],
                     "best_epoch": r["train_history"].get("best_epoch", -1),
                     "epochs_trained": len(r["train_history"].get("train_losses", [])),

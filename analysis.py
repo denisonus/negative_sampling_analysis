@@ -102,6 +102,106 @@ def plot_all_metrics(
     plt.show()
 
 
+def plot_quality_metrics(
+    results,
+    metrics=[
+        "item_coverage@10",
+        "novelty@10",
+        "tail_percentage@10",
+        "personalization@10",
+    ],
+    output_path=None,
+):
+    """Create grouped bar chart for recommendation-quality metrics."""
+    stats_data = results["statistics"]
+    strategies = list(stats_data.keys())
+
+    n_strategies, n_metrics = len(strategies), len(metrics)
+    fig, ax = plt.subplots(figsize=(14, 7))
+    x = np.arange(n_strategies)
+    width = 0.8 / n_metrics
+    colors = plt.colormaps["Set3"](np.linspace(0, 1, n_metrics))
+
+    for i, metric in enumerate(metrics):
+        values = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("mean", 0)
+            for s in strategies
+        ]
+        errors = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("std", 0)
+            for s in strategies
+        ]
+
+        offset = (i - n_metrics / 2 + 0.5) * width
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=metric,
+            color=colors[i],
+            yerr=errors,
+            capsize=3,
+        )
+
+    ax.set_xlabel("Sampling Strategy")
+    ax.set_ylabel("Metric Value")
+    ax.set_title("Recommendation Quality Metrics")
+    ax.set_xticks(x)
+    ax.set_xticklabels(strategies, rotation=45, ha="right")
+    ax.legend(loc="upper right")
+
+    plt.tight_layout()
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def plot_quality_tradeoff(
+    results, x_metric="item_coverage@10", y_metric="ndcg@10", output_path=None
+):
+    """Plot ranking quality against recommendation-quality tradeoffs."""
+    stats_data = results["statistics"]
+    strategies = list(stats_data.keys())
+
+    x_values = [
+        stats_data[s].get("quality_metrics", {}).get(x_metric, {}).get("mean", 0)
+        for s in strategies
+    ]
+    y_values = [
+        stats_data[s].get("metrics", {}).get(y_metric, {}).get("mean", 0)
+        for s in strategies
+    ]
+    sizes = [
+        max(50, stats_data[s].get("timing", {}).get("total_time", {}).get("mean", 0) * 8)
+        for s in strategies
+    ]
+
+    plt.figure(figsize=(10, 7))
+    plt.scatter(x_values, y_values, s=sizes, color="steelblue", edgecolor="black")
+
+    for strategy, x_value, y_value in zip(strategies, x_values, y_values):
+        plt.text(x_value, y_value, strategy, fontsize=9, ha="left", va="bottom")
+
+    plt.xlabel(x_metric)
+    plt.ylabel(y_metric)
+    plt.title(f"Tradeoff: {y_metric} vs {x_metric}")
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def _extract_valid_series(valid_history, metric="ndcg@10"):
+    """Normalize validation history to a numeric series."""
+    if not valid_history:
+        return []
+    if isinstance(valid_history[0], dict):
+        return [entry.get(metric, 0.0) for entry in valid_history]
+    return valid_history
+
+
 def plot_training_curves(results, output_path=None):
     """Plot training loss and validation metrics over epochs for each strategy."""
     if "raw_results" not in results:
@@ -140,8 +240,9 @@ def plot_training_curves(results, output_path=None):
             )
 
         if all_valid and all_valid[0]:
-            min_len = min(len(v) for v in all_valid if v)
-            valid_array = np.array([v[:min_len] for v in all_valid if v])
+            valid_series = [_extract_valid_series(v) for v in all_valid if v]
+            min_len = min(len(v) for v in valid_series if v)
+            valid_array = np.array([v[:min_len] for v in valid_series if v])
 
             mean_valid = np.mean(valid_array, axis=0)
             std_valid = np.std(valid_array, axis=0)
@@ -226,7 +327,7 @@ def plot_convergence_speed(
     for strategy, runs in raw_results.items():
         epochs_to_converge = []
         for run in runs:
-            valid_metrics = run.get("valid_metrics", [])
+            valid_metrics = _extract_valid_series(run.get("valid_metrics", []))
             if not valid_metrics:
                 continue
 
@@ -387,6 +488,16 @@ def generate_full_report(results_file, output_dir=None):
         plot_timing_comparison(
             results, output_path=os.path.join(output_dir, "timing.png")
         )
+        has_quality_metrics = any(
+            stats_data.get("quality_metrics") for stats_data in results["statistics"].values()
+        )
+        if has_quality_metrics:
+            plot_quality_metrics(
+                results, output_path=os.path.join(output_dir, "quality_metrics.png")
+            )
+            plot_quality_tradeoff(
+                results, output_path=os.path.join(output_dir, "quality_tradeoff.png")
+            )
         statistical_significance_test(results)
 
     print(f"Analysis files saved to: {output_dir}")
