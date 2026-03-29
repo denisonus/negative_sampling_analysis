@@ -236,6 +236,44 @@ class ResearchInvariantTests(unittest.TestCase):
         self.assertEqual(curriculum.warmup_epochs, 7)
         self.assertAlmostEqual(debiased.tau_plus, 0.2)
 
+    def test_fractional_hard_ratio_does_not_collapse_for_single_negative(self):
+        model = self._build_model()
+
+        mixed = get_sampler(
+            "mixed",
+            num_items=self.num_items,
+            num_neg_samples=1,
+            user_item_dict=self.user_item_dict,
+            model=model,
+            hard_ratio=0.5,
+            candidate_pool_size=8,
+        )
+        curriculum = get_sampler(
+            "curriculum",
+            num_items=self.num_items,
+            num_neg_samples=1,
+            user_item_dict=self.user_item_dict,
+            model=model,
+            curriculum_start_ratio=0.5,
+            curriculum_end_ratio=0.5,
+            curriculum_warmup_epochs=1,
+            candidate_pool_size=8,
+        )
+
+        set_seed(123)
+        mixed_counts = [mixed._split_negative_budget(mixed.hard_ratio)[0] for _ in range(200)]
+        set_seed(123)
+        curriculum_counts = [
+            curriculum._split_negative_budget(curriculum._get_current_hard_ratio())[0]
+            for _ in range(200)
+        ]
+
+        for counts in [mixed_counts, curriculum_counts]:
+            self.assertIn(0, counts)
+            self.assertIn(1, counts)
+            self.assertGreater(np.mean(counts), 0.35)
+            self.assertLess(np.mean(counts), 0.65)
+
     def test_trainer_restores_best_checkpoint_after_early_stopping(self):
         model = torch.nn.Linear(1, 1, bias=False)
         sampler = get_sampler(

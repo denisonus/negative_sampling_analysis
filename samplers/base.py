@@ -93,3 +93,18 @@ class NegativeSampler(ABC):
                 chosen.append(item)
 
         return np.array(chosen, dtype=np.int64)
+
+    def _split_negative_budget(self, primary_ratio: float) -> tuple[int, int]:
+        """Split the negative budget while preserving fractional ratios in expectation.
+        """
+        ratio = float(np.clip(primary_ratio, 0.0, 1.0))
+        expected_primary = self.num_neg_samples * ratio
+        primary_count = int(np.floor(expected_primary))
+        fractional_part = expected_primary - primary_count
+
+        if fractional_part > 0 and np.random.random() < fractional_part:
+            primary_count += 1
+
+        primary_count = min(primary_count, self.num_neg_samples)
+        secondary_count = self.num_neg_samples - primary_count
+        return primary_count, secondary_count

@@ -26,14 +26,11 @@ class MixedNegativeSampler(NegativeSampler):
         self.name = "mixed"
         self.hard_ratio = hard_ratio
 
-        self.num_hard = int(num_neg_samples * hard_ratio)
-        self.num_random = num_neg_samples - self.num_hard
-
         self.uniform_sampler = UniformNegativeSampler(
-            num_items, self.num_random, user_item_dict, device
+            num_items, num_neg_samples, user_item_dict, device
         )
         self.hard_sampler = HardNegativeSampler(
-            num_items, self.num_hard, user_item_dict, model, device, candidate_pool_size
+            num_items, num_neg_samples, user_item_dict, model, device, candidate_pool_size
         )
 
     def set_model(self, model: EmbeddingModel) -> None:
@@ -44,9 +41,11 @@ class MixedNegativeSampler(NegativeSampler):
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
     ) -> torch.Tensor:
         batch_size = user_ids.size(0)
+        num_hard, num_random = self._split_negative_budget(self.hard_ratio)
 
         # Sample random negatives
-        if self.num_random > 0:
+        if num_random > 0:
+            self.uniform_sampler.num_neg_samples = num_random
             random_negs = self.uniform_sampler.sample(user_ids, pos_item_ids)
         else:
             random_negs = torch.empty(
@@ -54,7 +53,8 @@ class MixedNegativeSampler(NegativeSampler):
             )
 
         # Sample hard negatives
-        if self.num_hard > 0 and self.hard_sampler.model is not None:
+        if num_hard > 0 and self.hard_sampler.model is not None:
+            self.hard_sampler.num_neg_samples = num_hard
             hard_negs = self.hard_sampler.sample(user_ids, pos_item_ids)
         else:
             hard_negs = torch.empty(batch_size, 0, dtype=torch.long, device=self.device)

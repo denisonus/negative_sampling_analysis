@@ -58,8 +58,7 @@ class CurriculumNegativeSampler(NegativeSampler):
         self, user_ids: torch.Tensor, pos_item_ids: torch.Tensor
     ) -> torch.Tensor:
         hard_ratio = self._get_current_hard_ratio()
-        num_hard = int(self.num_neg_samples * hard_ratio)
-        num_random = self.num_neg_samples - num_hard
+        num_hard, num_random = self._split_negative_budget(hard_ratio)
 
         batch_size = user_ids.size(0)
 
