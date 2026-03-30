@@ -7,8 +7,9 @@ from .base import NegativeSampler, Device
 from .uniform import UniformNegativeSampler
 from .popularity import PopularityNegativeSampler
 from .hard import HardNegativeSampler, EmbeddingModel
-from .mixed import MixedNegativeSampler
+from .mixed import MixedHardUniformNegativeSampler
 from .in_batch import InBatchNegativeSampler
+from .mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 from .dns import DNSNegativeSampler
 from .curriculum import CurriculumNegativeSampler
 from .debiased import DebiasedNegativeSampler
@@ -55,8 +56,8 @@ def get_sampler(
             candidate_pool_size=kwargs.get("candidate_pool_size", 100),
         )
 
-    elif strategy == "mixed":
-        return MixedNegativeSampler(
+    elif strategy in {"mixed_hard_uniform", "mixed"}:
+        return MixedHardUniformNegativeSampler(
             num_items,
             num_neg_samples,
             user_item_dict,
@@ -69,6 +70,17 @@ def get_sampler(
     elif strategy == "in_batch":
         return InBatchNegativeSampler(
             num_items, num_neg_samples, user_item_dict, device
+        )
+
+    elif strategy in {"mixed_in_batch_uniform", "mns"}:
+        return MixedInBatchUniformNegativeSampler(
+            num_items,
+            num_neg_samples,
+            user_item_dict,
+            device,
+            index_batch_size=kwargs.get(
+                "mixed_index_batch_size", kwargs.get("train_batch_size", 1024)
+            ),
         )
 
     elif strategy == "dns":

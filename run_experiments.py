@@ -23,6 +23,7 @@ from utils import (
     SimpleDataLoader,
     Trainer,
     InBatchTrainer,
+    MixedInBatchTrainer,
 )
 from evaluation import Evaluator, compute_quality_metrics
 
@@ -119,7 +120,12 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         tau_plus=config.get("tau_plus", 0.05),
         smoothing=config.get("smoothing", 0.75),
         logq_correction=config.get("logq_correction", False),
+        train_batch_size=config.get("train_batch_size", 1024),
+        mixed_index_batch_size=config.get(
+            "mixed_index_batch_size", config.get("train_batch_size", 1024)
+        ),
     )
+    print(f"Resolved sampler: {sampler.name}")
 
     evaluator = Evaluator(
         num_items=num_items,
@@ -128,8 +134,12 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         device=device,
     )
 
-    if sampling_strategy == "in_batch":
+    if sampler.name == "in_batch":
         trainer = InBatchTrainer(
+            model, sampler, config, device, item_popularity=item_popularity
+        )
+    elif sampler.name == "mixed_in_batch_uniform":
+        trainer = MixedInBatchTrainer(
             model, sampler, config, device, item_popularity=item_popularity
         )
     else:
@@ -162,7 +172,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         print(f"  {metric}: {value:.4f}")
 
     return {
-        "strategy": sampling_strategy,
+        "strategy": sampler.name,
         "train_history": train_history,
         "test_metrics": test_metrics,
         "quality_metrics": quality_metrics,
@@ -186,7 +196,8 @@ def run_all_experiments(config, strategies=None, num_runs=1):
             "uniform",
             "popularity",
             "hard",
-            "mixed",
+            "mixed_hard_uniform",
+            "mixed_in_batch_uniform",
             "in_batch",
             "dns",
             "curriculum",

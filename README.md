@@ -12,7 +12,8 @@ Supported strategies:
 - `uniform`
 - `popularity`
 - `hard`
-- `mixed`
+- `mixed_hard_uniform`
+- `mixed_in_batch_uniform`
 - `in_batch`
 - `dns`
 - `curriculum`

@@ -9,6 +9,27 @@ from tqdm import tqdm
 
 from samplers.base import SamplingResult
 from samplers.debiased import DebiasedNegativeSampler
+from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
+
+
+def _build_interaction_matrix(user_item_dict, num_items, device):
+    """Build a sparse user-item matrix for fast false-negative masking."""
+    rows, cols = [], []
+    for uid, items in user_item_dict.items():
+        for iid in items:
+            rows.append(uid)
+            cols.append(iid)
+
+    n_users = max(user_item_dict.keys()) + 1 if user_item_dict else 0
+    return (
+        torch.sparse_coo_tensor(
+            torch.tensor([rows, cols], dtype=torch.long),
+            torch.ones(len(rows), dtype=torch.float32),
+            size=(n_users, num_items),
+        )
+        .coalesce()
+        .to(device)
+    )
 
 
 class Trainer:
@@ -190,24 +211,8 @@ class InBatchTrainer(Trainer):
             prob = freq / freq.sum()
             self._log_q = torch.from_numpy(np.log(prob + 1e-10)).float().to(device)
 
-        # Pre-build sparse user-item interaction matrix for vectorized
-        # false-negative masking (avoids Python loops each step).
-        uid_dict = sampler.user_item_dict
-        rows, cols = [], []
-        for uid, items in uid_dict.items():
-            for iid in items:
-                rows.append(uid)
-                cols.append(iid)
-        n_users = max(uid_dict.keys()) + 1
-        n_items = sampler.num_items
-        self._interaction = (
-            torch.sparse_coo_tensor(
-                torch.tensor([rows, cols], dtype=torch.long),
-                torch.ones(len(rows), dtype=torch.float32),
-                size=(n_users, n_items),
-            )
-            .coalesce()
-            .to(device)
+        self._interaction = _build_interaction_matrix(
+            sampler.user_item_dict, sampler.num_items, device
         )
 
     def train_epoch(self, train_loader, epoch=0):
@@ -244,6 +249,87 @@ class InBatchTrainer(Trainer):
             # Keep diagonal (true positive for each user)
             mask.fill_diagonal_(False)
             logits[mask] = float("-inf")
+            epoch_sampling_time += time.time() - sample_start
+
+            labels = torch.arange(batch_size, device=self.device)
+
+            train_start = time.time()
+            loss = torch.nn.functional.cross_entropy(logits, labels)
+
+            self.optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
+            epoch_training_time += time.time() - train_start
+
+            total_loss += loss.item()
+            num_batches += 1
+            pbar.set_postfix({"loss": loss.item()})
+
+        avg_loss = total_loss / num_batches
+        self.train_losses.append(avg_loss)
+        self.sampling_times.append(epoch_sampling_time)
+        self.training_times.append(epoch_training_time)
+
+        return avg_loss
+
+
+class MixedInBatchTrainer(InBatchTrainer):
+    """Trainer for the in-batch + uniform mixed-negative variant."""
+
+    def __init__(self, model, sampler, config, device, item_popularity=None):
+        super().__init__(model, sampler, config, device, item_popularity=item_popularity)
+        if not isinstance(sampler, MixedInBatchUniformNegativeSampler):
+            raise TypeError("MixedInBatchTrainer requires MixedInBatchUniformNegativeSampler")
+
+    def train_epoch(self, train_loader, epoch=0):
+        self.model.train()
+        total_loss = 0
+        num_batches = 0
+        epoch_sampling_time = 0
+        epoch_training_time = 0
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
+        for user_ids, pos_item_ids in pbar:
+            user_ids = user_ids.to(self.device)
+            pos_item_ids = pos_item_ids.to(self.device)
+            batch_size = user_ids.size(0)
+
+            sample_start = time.time()
+            user_emb = self.model.get_user_embedding(user_ids)
+            batch_item_emb = self.model.get_item_embedding(pos_item_ids)
+            batch_logits = torch.matmul(user_emb, batch_item_emb.t())
+            batch_logits = batch_logits / self.model.temperature.clamp(min=0.01)
+
+            if self.logq_correction and self._log_q is not None:
+                batch_logits = batch_logits - self._log_q[pos_item_ids].unsqueeze(0)
+
+            batch_mask = (
+                self._interaction.index_select(0, user_ids)
+                .to_dense()[:, pos_item_ids]
+                .bool()
+            )
+            batch_mask.fill_diagonal_(False)
+            batch_logits[batch_mask] = float("-inf")
+
+            shared_neg_ids = self.sampler.sample_shared_uniform_items(
+                exclude_item_ids=pos_item_ids
+            )
+            if shared_neg_ids.numel() > 0:
+                shared_item_emb = self.model.get_item_embedding(shared_neg_ids)
+                shared_logits = torch.matmul(user_emb, shared_item_emb.t())
+                shared_logits = shared_logits / self.model.temperature.clamp(min=0.01)
+
+                shared_mask = (
+                    self._interaction.index_select(0, user_ids)
+                    .to_dense()[:, shared_neg_ids]
+                    .bool()
+                )
+                shared_logits[shared_mask] = float("-inf")
+                logits = torch.cat([batch_logits, shared_logits], dim=1)
+            else:
+                logits = batch_logits
+
             epoch_sampling_time += time.time() - sample_start
 
             labels = torch.arange(batch_size, device=self.device)

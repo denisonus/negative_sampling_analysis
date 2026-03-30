@@ -105,7 +105,7 @@ class ResearchInvariantTests(unittest.TestCase):
             "uniform",
             "popularity",
             "hard",
-            "mixed",
+            "mixed_hard_uniform",
             "dns",
             "curriculum",
             "debiased",
@@ -148,7 +148,14 @@ class ResearchInvariantTests(unittest.TestCase):
                         self.assertNotIn(item_id, positives)
 
     def test_unique_negative_samplers_return_distinct_items_per_example(self):
-        strategies = ["uniform", "hard", "mixed", "dns", "curriculum", "debiased"]
+        strategies = [
+            "uniform",
+            "hard",
+            "mixed_hard_uniform",
+            "dns",
+            "curriculum",
+            "debiased",
+        ]
         model = self._build_model()
 
         for strategy in strategies:
@@ -225,6 +232,13 @@ class ResearchInvariantTests(unittest.TestCase):
             user_item_dict=self.user_item_dict,
             tau_plus=0.2,
         )
+        mixed_in_batch_uniform = get_sampler(
+            "mixed_in_batch_uniform",
+            num_items=self.num_items,
+            num_neg_samples=self.num_neg_samples,
+            user_item_dict=self.user_item_dict,
+            train_batch_size=32,
+        )
 
         self.assertFalse(popularity.logq_correction)
         self.assertEqual(hard.candidate_pool_size, 7)
@@ -235,12 +249,14 @@ class ResearchInvariantTests(unittest.TestCase):
         self.assertAlmostEqual(curriculum.end_hard_ratio, 0.9)
         self.assertEqual(curriculum.warmup_epochs, 7)
         self.assertAlmostEqual(debiased.tau_plus, 0.2)
+        self.assertEqual(mixed_in_batch_uniform.name, "mixed_in_batch_uniform")
+        self.assertEqual(mixed_in_batch_uniform.index_batch_size, 32)
 
     def test_fractional_hard_ratio_does_not_collapse_for_single_negative(self):
         model = self._build_model()
 
         mixed = get_sampler(
-            "mixed",
+            "mixed_hard_uniform",
             num_items=self.num_items,
             num_neg_samples=1,
             user_item_dict=self.user_item_dict,
@@ -273,6 +289,17 @@ class ResearchInvariantTests(unittest.TestCase):
             self.assertIn(1, counts)
             self.assertGreater(np.mean(counts), 0.35)
             self.assertLess(np.mean(counts), 0.65)
+
+    def test_legacy_mixed_alias_maps_to_hard_uniform_variant(self):
+        sampler = get_sampler(
+            "mixed",
+            num_items=self.num_items,
+            num_neg_samples=self.num_neg_samples,
+            user_item_dict=self.user_item_dict,
+            model=self._build_model(),
+        )
+
+        self.assertEqual(sampler.name, "mixed_hard_uniform")
 
     def test_trainer_restores_best_checkpoint_after_early_stopping(self):
         model = torch.nn.Linear(1, 1, bias=False)

@@ -1,0 +1,18 @@
+# ML-100K Experiment Suite
+
+This suite is the main rerun package for the thesis comparison on `ml-100k`.
+
+Method benchmark:
+- `10_ml100k_benchmark.yaml`
+
+Main knob sweeps:
+- explicit negatives: `20_ml100k_neg1.yaml`, `21_ml100k_neg10.yaml`
+- logQ correction: `30_ml100k_logq_off.yaml`
+- popularity smoothing: `31_ml100k_pop_smoothing_0p50.yaml`, `32_ml100k_pop_smoothing_1p00.yaml`
+- hard-family candidate pool: `43_ml100k_hard_pool_50.yaml`, `10_ml100k_benchmark.yaml`, `40_ml100k_hard_pool_200.yaml`
+- DNS temperature: `10_ml100k_benchmark.yaml`, `41_ml100k_dns_temp_0p20.yaml`
+- curriculum schedule: `10_ml100k_benchmark.yaml`, `42_ml100k_curriculum_gentle.yaml`
+- debiased `tau_plus`: `10_ml100k_benchmark.yaml`, `50_ml100k_debiased_tau_0p10.yaml`
+- in-batch batch size: `10_ml100k_benchmark.yaml`, `60_ml100k_inbatch_bs1024.yaml`
+- hard-uniform ratio: `61_ml100k_hard_uniform_ratio_0p25.yaml`, `10_ml100k_benchmark.yaml`, `62_ml100k_hard_uniform_ratio_0p75.yaml`
+- in-batch + uniform index batch size: `10_ml100k_benchmark.yaml`, `70_ml100k_mns_index_1024.yaml`, `71_ml100k_mns_index_2048.yaml`

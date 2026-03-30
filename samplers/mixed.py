@@ -1,4 +1,4 @@
-"""Mixed negative sampling."""
+"""Hard + uniform mixed negative sampling."""
 
 import numpy as np
 import torch
@@ -9,8 +9,8 @@ from .uniform import UniformNegativeSampler
 from .hard import HardNegativeSampler, EmbeddingModel
 
 
-class MixedNegativeSampler(NegativeSampler):
-    """Combine random and hard negatives with a fixed ratio."""
+class MixedHardUniformNegativeSampler(NegativeSampler):
+    """Combine hard and uniform negatives with a fixed ratio."""
 
     def __init__(
         self,
@@ -23,7 +23,7 @@ class MixedNegativeSampler(NegativeSampler):
         candidate_pool_size: int = 100,
     ):
         super().__init__(num_items, num_neg_samples, user_item_dict, device)
-        self.name = "mixed"
+        self.name = "mixed_hard_uniform"
         self.hard_ratio = hard_ratio
 
         self.uniform_sampler = UniformNegativeSampler(
@@ -74,3 +74,7 @@ class MixedNegativeSampler(NegativeSampler):
             )
 
         return torch.from_numpy(deduped).to(self.device)
+
+
+# Backward-compatible alias for older imports/configs.
+MixedNegativeSampler = MixedHardUniformNegativeSampler
