@@ -1,4 +1,4 @@
-# Bias-correction ablation for samplers that use logQ-style correction.
+# In-batch + uniform sweep: larger shared index batch with fixed train batch size.
 seed: 42
 dataset: 'ml-100k'
 data_path: 'dataset/'
@@ -27,8 +27,8 @@ curriculum_end_ratio: 0.8
 curriculum_warmup_epochs: 8
 tau_plus: 0.05
 smoothing: 0.75
-logq_correction: false
-mixed_index_batch_size: 512
+logq_correction: true
+mixed_index_batch_size: 2048
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']

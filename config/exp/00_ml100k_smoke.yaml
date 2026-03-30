@@ -28,6 +28,7 @@ curriculum_warmup_epochs: 3
 tau_plus: 0.05
 smoothing: 0.75
 logq_correction: true
+mixed_index_batch_size: 512
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']

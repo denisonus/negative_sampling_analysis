@@ -1,4 +1,4 @@
-# Main low-compute benchmark on MovieLens 100K.
+# Main benchmark on MovieLens 100K.
 seed: 42
 dataset: 'ml-100k'
 data_path: 'dataset/'
@@ -28,6 +28,7 @@ curriculum_warmup_epochs: 8
 tau_plus: 0.05
 smoothing: 0.75
 logq_correction: true
+mixed_index_batch_size: 512
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']
