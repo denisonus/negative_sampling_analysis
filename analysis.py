@@ -3,7 +3,6 @@
 import argparse
 import csv
 import os
-import sys
 from datetime import datetime
 import json
 import numpy as np
@@ -54,6 +53,49 @@ def _get_metric_value(strategy_stats, metric):
     if metric in strategy_stats.get("timing", {}):
         return strategy_stats["timing"][metric]["mean"]
     return 0.0
+
+
+def _load_sweep_bundles(results_files):
+    """Load results files together with sibling metadata/config."""
+    bundles = []
+    for results_file in results_files:
+        results = load_results(results_file)
+        metadata = _load_metadata_for_results(results_file)
+        bundles.append(
+            {
+                "results_file": results_file,
+                "results": results,
+                "metadata": metadata,
+                "config": metadata.get("config", {}),
+            }
+        )
+    return bundles
+
+
+def _infer_sweep_param(bundles, param=None):
+    """Infer the single varying config parameter across sweep bundles."""
+    if not bundles:
+        return param
+    if param is not None:
+        return param
+
+    ignored_keys = {"seed", "device", "metrics", "topk", "valid_metric"}
+    candidate_params = []
+    all_keys = set().union(*(bundle["config"].keys() for bundle in bundles))
+    for key in sorted(all_keys):
+        if key in ignored_keys:
+            continue
+        values = {
+            json.dumps(bundle["config"].get(key, None), sort_keys=True)
+            for bundle in bundles
+        }
+        if len(values) > 1:
+            candidate_params.append(key)
+    if len(candidate_params) != 1:
+        raise ValueError(
+            "Could not infer a single varying parameter. Pass --sweep_param explicitly."
+        )
+    return candidate_params[0]
 
 
 def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
@@ -285,6 +327,76 @@ def plot_quality_small_multiples(
     _finalize_figure(fig, output_path)
 
 
+def plot_competitive_quality(
+    results,
+    primary_metric="ndcg@10",
+    min_relative=0.97,
+    metrics=None,
+    output_path=None,
+):
+    """Plot quality metrics only for strategies that remain close to the best relevance."""
+    if metrics is None:
+        metrics = ["item_coverage@10", "novelty@10", "personalization@10"]
+
+    stats_data = results["statistics"]
+    if not stats_data:
+        return []
+
+    best_primary = max(_get_metric_value(stats, primary_metric) for stats in stats_data.values())
+    threshold = best_primary * min_relative
+    strategies = [
+        strategy
+        for strategy in _sorted_strategies(stats_data, metric=primary_metric)
+        if _get_metric_value(stats_data[strategy], primary_metric) >= threshold
+    ]
+
+    if not strategies:
+        return []
+
+    fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 5))
+    if len(metrics) == 1:
+        axes = [axes]
+
+    colors = plt.colormaps["Set2"](np.linspace(0, 1, len(metrics)))
+    for idx, metric in enumerate(metrics):
+        ax = axes[idx]
+        values = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("mean", 0)
+            for s in strategies
+        ]
+        errors = [
+            stats_data[s].get("quality_metrics", {}).get(metric, {}).get("std", 0)
+            for s in strategies
+        ]
+        bars = ax.bar(
+            strategies,
+            values,
+            color=colors[idx],
+            edgecolor="black",
+            yerr=errors,
+            capsize=4,
+        )
+        ax.set_title(metric)
+        ax.tick_params(axis="x", rotation=45)
+        ax.grid(True, axis="y", alpha=0.2)
+
+        value_offset = max(values) * 0.02 if values and max(values) > 0 else 0.01
+        for bar, value in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + value_offset,
+                f"{value:.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    fig.suptitle(f"Competitive Quality ({primary_metric} >= {min_relative:.0%} of best)")
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return strategies
+
+
 def plot_metric_tradeoff(
     results,
     x_metric,
@@ -389,16 +501,10 @@ def plot_training_curves(results, output_path=None):
             losses_array = np.array([loss[:min_len] for loss in all_losses if loss])
 
             mean_loss = np.mean(losses_array, axis=0)
-            std_loss = np.std(losses_array, axis=0)
             epochs = np.arange(len(mean_loss))
 
-            axes[0].plot(epochs, mean_loss, label=strategy, color=colors[idx])
-            axes[0].fill_between(
-                epochs,
-                mean_loss - std_loss,
-                mean_loss + std_loss,
-                alpha=0.2,
-                color=colors[idx],
+            axes[0].plot(
+                epochs, mean_loss, label=strategy, color=colors[idx], linewidth=2
             )
 
         if all_valid and all_valid[0]:
@@ -407,16 +513,10 @@ def plot_training_curves(results, output_path=None):
             valid_array = np.array([v[:min_len] for v in valid_series if v])
 
             mean_valid = np.mean(valid_array, axis=0)
-            std_valid = np.std(valid_array, axis=0)
             epochs = np.arange(len(mean_valid))
 
-            axes[1].plot(epochs, mean_valid, label=strategy, color=colors[idx])
-            axes[1].fill_between(
-                epochs,
-                mean_valid - std_valid,
-                mean_valid + std_valid,
-                alpha=0.2,
-                color=colors[idx],
+            axes[1].plot(
+                epochs, mean_valid, label=strategy, color=colors[idx], linewidth=2
             )
 
     axes[0].set_xlabel("Epoch")
@@ -669,16 +769,14 @@ def plot_training_dynamics(
         min_len = min(len(series) for series in valid_series)
         valid_array = np.array([series[:min_len] for series in valid_series])
         mean_valid = np.mean(valid_array, axis=0)
-        std_valid = np.std(valid_array, axis=0)
         epochs = np.arange(1, len(mean_valid) + 1)
 
-        axes[0].plot(epochs, mean_valid, label=strategy, color=colors[idx])
-        axes[0].fill_between(
+        axes[0].plot(
             epochs,
-            mean_valid - std_valid,
-            mean_valid + std_valid,
-            alpha=0.2,
+            mean_valid,
+            label=strategy,
             color=colors[idx],
+            linewidth=2,
         )
 
         epochs_to_converge = []
@@ -783,9 +881,58 @@ def save_summary_table(results, output_path):
         writer.writerows(rows)
 
 
-def save_significance_table(results, output_path, metric="ndcg@10", baseline="uniform"):
+def save_competitive_summary(
+    results,
+    output_path,
+    primary_metric="ndcg@10",
+    min_relative=0.97,
+):
+    """Persist a compact table for strategies that remain close to the best primary metric."""
+    stats_data = results["statistics"]
+    if not stats_data:
+        return []
+
+    best_primary = max(_get_metric_value(stats, primary_metric) for stats in stats_data.values())
+    threshold = best_primary * min_relative
+    strategies = [
+        strategy
+        for strategy in _sorted_strategies(stats_data, metric=primary_metric)
+        if _get_metric_value(stats_data[strategy], primary_metric) >= threshold
+    ]
+
+    rows = []
+    for strategy in strategies:
+        strategy_stats = stats_data[strategy]
+        rows.append(
+            {
+                "strategy": strategy,
+                primary_metric: _get_metric_value(strategy_stats, primary_metric),
+                "recall@10": _get_metric_value(strategy_stats, "recall@10"),
+                "mrr@10": _get_metric_value(strategy_stats, "mrr@10"),
+                "item_coverage@10": _get_metric_value(strategy_stats, "item_coverage@10"),
+                "novelty@10": _get_metric_value(strategy_stats, "novelty@10"),
+                "personalization@10": _get_metric_value(strategy_stats, "personalization@10"),
+                "total_time": _get_metric_value(strategy_stats, "total_time"),
+            }
+        )
+
+    if not rows:
+        return []
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+
+def save_significance_table(
+    results, output_path, metric="ndcg@10", baseline="uniform", quiet=True
+):
     """Persist paired significance results when multi-run data is available."""
-    table = statistical_significance_test(results, metric=metric, baseline=baseline)
+    table = statistical_significance_test(
+        results, metric=metric, baseline=baseline, quiet=quiet
+    )
     if not table:
         return
 
@@ -813,37 +960,11 @@ def plot_parameter_sweep(
     csv_path=None,
 ):
     """Plot a sampler knob sweep across multiple finished runs."""
-    bundles = []
-    for results_file in results_files:
-        results = load_results(results_file)
-        metadata = _load_metadata_for_results(results_file)
-        bundles.append(
-            {
-                "results_file": results_file,
-                "results": results,
-                "metadata": metadata,
-                "config": metadata.get("config", {}),
-            }
-        )
-
+    bundles = _load_sweep_bundles(results_files)
     if not bundles:
         return None
 
-    if param is None:
-        ignored_keys = {"seed", "device", "metrics", "topk", "valid_metric"}
-        candidate_params = []
-        all_keys = set().union(*(bundle["config"].keys() for bundle in bundles))
-        for key in sorted(all_keys):
-            if key in ignored_keys:
-                continue
-            values = {json.dumps(bundle["config"].get(key, None), sort_keys=True) for bundle in bundles}
-            if len(values) > 1:
-                candidate_params.append(key)
-        if len(candidate_params) != 1:
-            raise ValueError(
-                "Could not infer a single varying parameter. Pass --sweep_param explicitly."
-            )
-        param = candidate_params[0]
+    param = _infer_sweep_param(bundles, param=param)
 
     rows = []
     for bundle in bundles:
@@ -872,6 +993,8 @@ def plot_parameter_sweep(
 
     rows.sort(key=sort_key)
 
+    param_label = str(param) if param is not None else "parameter"
+
     x_labels = [str(row["param"]) for row in rows]
     x_positions = np.arange(len(rows))
     y_values = [row["metric"] for row in rows]
@@ -880,9 +1003,9 @@ def plot_parameter_sweep(
     ax.plot(x_positions, y_values, marker="o", color="steelblue", linewidth=2)
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=45, ha="right")
-    ax.set_xlabel(param)
+    ax.set_xlabel(param_label)
     ax.set_ylabel(metric)
-    ax.set_title(f"{strategy}: {metric} across {param}")
+    ax.set_title(f"{strategy}: {metric} across {param_label}")
     ax.grid(True, alpha=0.3)
 
     for x_position, row in zip(x_positions, rows):
@@ -907,24 +1030,123 @@ def plot_parameter_sweep(
     return rows
 
 
-def statistical_significance_test(results, metric="ndcg@10", baseline="uniform"):
+def plot_multi_strategy_sweep(
+    results_files,
+    strategies,
+    metric="ndcg@10",
+    param=None,
+    output_path=None,
+    csv_path=None,
+):
+    """Overlay multiple strategies on the same parameter sweep."""
+    bundles = _load_sweep_bundles(results_files)
+    if not bundles:
+        return None
+
+    param = _infer_sweep_param(bundles, param=param)
+    rows = []
+    for bundle in bundles:
+        stats = bundle["results"].get("statistics", {})
+        param_value = bundle["config"].get(param)
+        for strategy in strategies:
+            if strategy not in stats:
+                continue
+            rows.append(
+                {
+                    "param": param_value,
+                    "strategy": strategy,
+                    "metric": _get_metric_value(stats[strategy], metric),
+                    "results_file": bundle["results_file"],
+                }
+            )
+
+    if not rows:
+        raise ValueError("None of the requested strategies were found in the provided results.")
+
+    def sort_key(value):
+        if isinstance(value, bool):
+            return (0, int(value))
+        if isinstance(value, (int, float)):
+            return (0, float(value))
+        return (1, str(value))
+
+    param_label = str(param) if param is not None else "parameter"
+
+    param_values = sorted({row["param"] for row in rows}, key=sort_key)
+    x_positions = np.arange(len(param_values))
+    x_labels = [str(value) for value in param_values]
+    value_to_pos = {value: idx for idx, value in enumerate(param_values)}
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
+    csv_rows = []
+
+    for color, strategy in zip(colors, strategies):
+        strategy_rows = [row for row in rows if row["strategy"] == strategy]
+        if not strategy_rows:
+            continue
+        strategy_rows.sort(key=lambda row: sort_key(row["param"]))
+        xs = [value_to_pos[row["param"]] for row in strategy_rows]
+        ys = [row["metric"] for row in strategy_rows]
+        ax.plot(xs, ys, marker="o", linewidth=2, color=color, label=strategy)
+        for x_value, y_value in zip(xs, ys):
+            ax.text(
+                x_value,
+                y_value,
+                f"{y_value:.3f}",
+                fontsize=8,
+                ha="center",
+                va="bottom",
+                color=color,
+            )
+        csv_rows.extend(strategy_rows)
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    ax.set_xlabel(param_label)
+    ax.set_ylabel(metric)
+    ax.set_title(f"Multi-strategy sweep: {metric} across {param_label}")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+    if csv_path:
+        with open(csv_path, "w", newline="") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=list(csv_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(csv_rows)
+
+    return csv_rows
+
+
+def statistical_significance_test(results, metric="ndcg@10", baseline="uniform", quiet=False):
     """Perform paired t-tests comparing each strategy to baseline."""
     if "statistics" not in results:
-        print("Statistical tests require multi-run experiment data")
+        if not quiet:
+            print("Statistical tests require multi-run experiment data")
         return None
 
     stats_data = results["statistics"]
 
     if baseline not in stats_data:
-        print(f"Baseline strategy '{baseline}' not found")
+        if not quiet:
+            print(f"Baseline strategy '{baseline}' not found")
         return None
 
     baseline_values = stats_data[baseline]["metrics"].get(metric, {}).get("values", [])
+    if len(baseline_values) < 2:
+        if not quiet:
+            print(f"Baseline strategy '{baseline}' has insufficient runs for significance testing")
+        return None
 
-    print(f"\nStatistical Significance Tests vs {baseline} on {metric}")
-    print("=" * 60)
+    if not quiet:
+        print(f"\nStatistical Significance Tests vs {baseline} on {metric}")
+        print("=" * 60)
 
     results_table = []
+    skipped = []
     for strategy in stats_data:
         if strategy == baseline:
             continue
@@ -934,7 +1156,7 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
         )
 
         if len(baseline_values) != len(strategy_values) or len(baseline_values) < 2:
-            print(f"{strategy}: Cannot compute (mismatched or insufficient runs)")
+            skipped.append(strategy)
             continue
 
         # Paired t-test
@@ -951,9 +1173,10 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
             else ""
         )
 
-        print(
-            f"{strategy:<15} diff={mean_diff:+.4f}  t={t_stat:.3f}  p={p_value:.4f} {significance}"
-        )
+        if not quiet:
+            print(
+                f"{strategy:<15} diff={mean_diff:+.4f}  t={t_stat:.3f}  p={p_value:.4f} {significance}"
+            )
 
         results_table.append(
             {
@@ -965,7 +1188,17 @@ def statistical_significance_test(results, metric="ndcg@10", baseline="uniform")
             }
         )
 
-    print("\n* p<0.05, ** p<0.01, *** p<0.001")
+    if not results_table:
+        if not quiet:
+            print("No valid paired comparisons available")
+        return None
+
+    if not quiet:
+        if skipped:
+            print("\nSkipped:")
+            for strategy in skipped:
+                print(f"{strategy}: mismatched or insufficient runs")
+        print("\n* p<0.05, ** p<0.01, *** p<0.001")
 
     return results_table
 
@@ -982,6 +1215,9 @@ def generate_full_report(results_file, output_dir=None):
 
     results = load_results(results_file)
     save_summary_table(results, os.path.join(output_dir, "summary_metrics.csv"))
+    save_competitive_summary(
+        results, os.path.join(output_dir, "competitive_summary.csv")
+    )
     plot_thesis_dashboard(results, output_path=os.path.join(output_dir, "dashboard.png"))
     plot_all_metrics(
         results, output_path=os.path.join(output_dir, "relevance_metrics.png")
@@ -993,12 +1229,22 @@ def generate_full_report(results_file, output_dir=None):
         plot_quality_small_multiples(
             results, output_path=os.path.join(output_dir, "quality_metrics.png")
         )
+        plot_competitive_quality(
+            results, output_path=os.path.join(output_dir, "competitive_quality.png")
+        )
         plot_metric_tradeoff(
             results,
             x_metric="item_coverage@10",
             y_metric="ndcg@10",
             output_path=os.path.join(output_dir, "ndcg_vs_coverage.png"),
             title="NDCG@10 vs Item Coverage@10",
+        )
+        plot_metric_tradeoff(
+            results,
+            x_metric="novelty@10",
+            y_metric="ndcg@10",
+            output_path=os.path.join(output_dir, "ndcg_vs_novelty.png"),
+            title="NDCG@10 vs Novelty@10",
         )
     plot_metric_tradeoff(
         results,
@@ -1035,6 +1281,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--sweep_strategy", type=str, default=None)
+    parser.add_argument("--sweep_strategies", nargs="+", default=None)
     parser.add_argument("--sweep_metric", type=str, default="ndcg@10")
     parser.add_argument("--sweep_param", type=str, default=None)
     args = parser.parse_args()
@@ -1042,20 +1289,32 @@ if __name__ == "__main__":
     if len(args.results_files) == 1 and args.sweep_strategy is None:
         generate_full_report(args.results_files[0], args.output_dir)
     else:
+        if args.sweep_strategy and args.sweep_strategies:
+            raise SystemExit("Use either --sweep_strategy or --sweep_strategies, not both.")
         output_dir = args.output_dir or os.path.join(
             os.path.dirname(args.results_files[0]), "sweep_analysis"
         )
         os.makedirs(output_dir, exist_ok=True)
-        if args.sweep_strategy is None:
+        if args.sweep_strategy is None and args.sweep_strategies is None:
             raise SystemExit(
-                "Multiple results files require --sweep_strategy to build a parameter sweep."
+                "Multiple results files require --sweep_strategy or --sweep_strategies."
             )
         plt.switch_backend("Agg")
-        plot_parameter_sweep(
-            args.results_files,
-            strategy=args.sweep_strategy,
-            metric=args.sweep_metric,
-            param=args.sweep_param,
-            output_path=os.path.join(output_dir, "parameter_sweep.png"),
-            csv_path=os.path.join(output_dir, "parameter_sweep.csv"),
-        )
+        if args.sweep_strategies:
+            plot_multi_strategy_sweep(
+                args.results_files,
+                strategies=args.sweep_strategies,
+                metric=args.sweep_metric,
+                param=args.sweep_param,
+                output_path=os.path.join(output_dir, "parameter_sweep_multi.png"),
+                csv_path=os.path.join(output_dir, "parameter_sweep_multi.csv"),
+            )
+        else:
+            plot_parameter_sweep(
+                args.results_files,
+                strategy=args.sweep_strategy,
+                metric=args.sweep_metric,
+                param=args.sweep_param,
+                output_path=os.path.join(output_dir, "parameter_sweep.png"),
+                csv_path=os.path.join(output_dir, "parameter_sweep.csv"),
+            )

@@ -1,0 +1,39 @@
+# In-batch + uniform extension: push shared index size beyond the current best.
+seed: 42
+dataset: 'ml-100k'
+data_path: 'dataset/'
+min_rating: 4
+
+# Model
+embedding_size: 64
+hidden_size: 128
+num_layers: 2
+dropout: 0.1
+
+# Training
+epochs: 35
+train_batch_size: 512
+learning_rate: 0.0003
+weight_decay: 0.0005
+patience: 6
+
+# Negative sampling
+num_neg_samples: 4
+candidate_pool_size: 100
+hard_neg_ratio: 0.5
+dns_temperature: 0.1
+curriculum_start_ratio: 0.0
+curriculum_end_ratio: 0.8
+curriculum_warmup_epochs: 8
+tau_plus: 0.05
+smoothing: 0.75
+logq_correction: true
+mixed_index_batch_size: 3072
+
+# Evaluation
+metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']
+topk: [5, 10, 20]
+valid_metric: 'NDCG@10'
+
+# Device
+device: 'cpu'
