@@ -17,6 +17,7 @@ from models import TwoTowerModel
 from samplers import get_sampler
 from utils import (
     load_recbole_dataset,
+    extract_feature_data,
     build_user_item_dict_from_train,
     compute_item_popularity_from_train,
     get_train_interactions,
@@ -65,6 +66,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     print(f"\n{'=' * 60}")
     print(f"Running experiment with {sampling_strategy} sampling")
     print(f"{'=' * 60}")
+    feature_aware = config.get("feature_aware", False)
 
     # Load data
     print("Loading dataset...")
@@ -72,7 +74,12 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         config["dataset"],
         config.get("data_path", "dataset/"),
         min_rating=config["min_rating"],
+        feature_aware=feature_aware,
     )
+
+    feature_data = None
+    if feature_aware:
+        feature_data = extract_feature_data(dataset, config["dataset"])
 
     num_users = dataset.num(dataset.uid_field)
     num_items = dataset.num(dataset.iid_field)
@@ -82,6 +89,14 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
         f"rating >= {rating_filter}"
     )
+    print(f"Feature-aware mode: {'on' if feature_aware else 'off'}")
+    if feature_data is not None:
+        user_feature_names = [spec["name"] for spec in feature_data["user"]["schema"]]
+        item_feature_names = [spec["name"] for spec in feature_data["item"]["schema"]]
+        print(
+            f"User features: {user_feature_names or 'none'} | "
+            f"Item features: {item_feature_names or 'none'}"
+        )
 
     train_interactions = get_train_interactions(train_data)
     user_item_dict = build_user_item_dict_from_train(train_interactions)
@@ -101,6 +116,18 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         hidden_size=config.get("hidden_size", 128),
         num_layers=config.get("num_layers", 2),
         dropout=config.get("dropout", 0.1),
+        user_feature_schema=(
+            feature_data["user"]["schema"] if feature_data is not None else None
+        ),
+        user_feature_tensors=(
+            feature_data["user"]["tensors"] if feature_data is not None else None
+        ),
+        item_feature_schema=(
+            feature_data["item"]["schema"] if feature_data is not None else None
+        ),
+        item_feature_tensors=(
+            feature_data["item"]["tensors"] if feature_data is not None else None
+        ),
     )
 
     sampler = get_sampler(
@@ -185,6 +212,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
             "num_users": num_users,
             "num_items": num_items,
             "num_train_interactions": num_train,
+            "feature_aware": feature_aware,
         },
     }
 

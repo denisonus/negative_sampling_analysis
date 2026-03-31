@@ -9,6 +9,7 @@ embedding_size: 64
 hidden_size: 128
 num_layers: 2
 dropout: 0.1
+feature_aware: false
 
 # Training
 epochs: 50

@@ -21,3 +21,6 @@ Main knob sweeps:
 Promising interaction follow-ups:
 - `63_ml100k_hard_uniform_pool50_ratio0p75.yaml`
 - `66_ml100k_hard_pool50_neg10.yaml`
+
+Feature-aware run:
+- `74_ml100k_feature_aware.yaml`
