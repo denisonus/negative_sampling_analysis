@@ -22,5 +22,13 @@ Promising interaction follow-ups:
 - `63_ml100k_hard_uniform_pool50_ratio0p75.yaml`
 - `66_ml100k_hard_pool50_neg10.yaml`
 
-Feature-aware run:
+Feature-aware comparisons:
+- direct benchmark: `75_ml100k_feature_benchmark.yaml`
+- hard-family smaller-pool check: `76_ml100k_feature_hard_pool_50.yaml`
+- popularity best-point check: `77_ml100k_feature_pop_smoothing_0p50.yaml`
+- in-batch + uniform index sweep: `78_ml100k_feature_mns_index_1024.yaml`, `79_ml100k_feature_mns_index_2048.yaml`
+- hard-uniform best interaction: `80_ml100k_feature_hard_uniform_pool50_ratio0p75.yaml`
+- in-batch + uniform batch interaction: `81_ml100k_feature_mns_bs256_index1024.yaml`
+
+Legacy single feature-aware smoke config:
 - `74_ml100k_feature_aware.yaml`

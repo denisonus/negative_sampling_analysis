@@ -55,6 +55,83 @@ def _get_metric_value(strategy_stats, metric):
     return 0.0
 
 
+def _feature_aware_from_metadata(metadata):
+    """Extract feature-aware flag from sibling metadata when available."""
+    if not metadata:
+        return None
+    config = metadata.get("config", {})
+    if "feature_aware" in config:
+        return bool(config["feature_aware"])
+    dataset_stats = metadata.get("dataset_stats", {})
+    if "feature_aware" in dataset_stats:
+        return bool(dataset_stats["feature_aware"])
+    return None
+
+
+def _title_suffix_from_metadata(metadata):
+    """Build a concise title suffix for per-run reports."""
+    feature_aware = _feature_aware_from_metadata(metadata)
+    if feature_aware is None:
+        return ""
+    return " [feature-aware]" if feature_aware else " [id-only]"
+
+
+def _sweep_ignored_keys():
+    return {"seed", "device", "metrics", "topk", "valid_metric"}
+
+
+def _sort_param_value(value):
+    if isinstance(value, bool):
+        return (0, int(value))
+    if isinstance(value, (int, float)):
+        return (0, float(value))
+    if value is None:
+        return (1, "")
+    return (2, str(value))
+
+
+def _infer_context_keys(bundles, primary_param=None):
+    """Infer additional varying config keys beyond the main sweep parameter."""
+    if not bundles:
+        return []
+
+    ignored_keys = _sweep_ignored_keys() | {"feature_aware"}
+    if primary_param is not None:
+        ignored_keys.add(primary_param)
+
+    context_keys = []
+    all_keys = set().union(*(bundle["config"].keys() for bundle in bundles))
+    for key in sorted(all_keys):
+        if key in ignored_keys:
+            continue
+        values = {
+            json.dumps(bundle["config"].get(key, None), sort_keys=True)
+            for bundle in bundles
+        }
+        if len(values) > 1:
+            context_keys.append(key)
+    return context_keys
+
+
+def _format_context(config, context_keys):
+    """Format extra varying config fields into a compact label."""
+    if not context_keys:
+        return ""
+    return ", ".join(f"{key}={config.get(key)}" for key in context_keys)
+
+
+def _line_label(strategy=None, feature_aware=None, context=""):
+    """Build a readable legend label for sweep lines."""
+    parts = []
+    if strategy is not None:
+        parts.append(strategy)
+    if feature_aware is not None:
+        parts.append("feat" if feature_aware else "id")
+    if context:
+        parts.append(context)
+    return " | ".join(parts) if parts else "series"
+
+
 def _load_sweep_bundles(results_files):
     """Load results files together with sibling metadata/config."""
     bundles = []
@@ -79,7 +156,7 @@ def _infer_sweep_param(bundles, param=None):
     if param is not None:
         return param
 
-    ignored_keys = {"seed", "device", "metrics", "topk", "valid_metric"}
+    ignored_keys = _sweep_ignored_keys()
     candidate_params = []
     all_keys = set().union(*(bundle["config"].keys() for bundle in bundles))
     for key in sorted(all_keys):
@@ -139,7 +216,10 @@ def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
 
 
 def plot_all_metrics(
-    results, metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"], output_path=None
+    results,
+    metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"],
+    output_path=None,
+    title_suffix="",
 ):
     """Create grouped bar chart comparing all metrics with error bars."""
     stats_data = results["statistics"]
@@ -173,7 +253,7 @@ def plot_all_metrics(
 
     ax.set_xlabel("Sampling Strategy")
     ax.set_ylabel("Metric Value")
-    ax.set_title("Comparison of Negative Sampling Strategies")
+    ax.set_title(f"Comparison of Negative Sampling Strategies{title_suffix}")
     ax.set_xticks(x)
     ax.set_xticklabels(strategies, rotation=45, ha="right")
     ax.legend(loc="upper right")
@@ -191,6 +271,7 @@ def plot_quality_metrics(
         "personalization@10",
     ],
     output_path=None,
+    title_suffix="",
 ):
     """Create grouped bar chart for recommendation-quality metrics."""
     stats_data = results["statistics"]
@@ -225,7 +306,7 @@ def plot_quality_metrics(
 
     ax.set_xlabel("Sampling Strategy")
     ax.set_ylabel("Metric Value")
-    ax.set_title("Recommendation Quality Metrics")
+    ax.set_title(f"Recommendation Quality Metrics{title_suffix}")
     ax.set_xticks(x)
     ax.set_xticklabels(strategies, rotation=45, ha="right")
     ax.legend(loc="upper right")
@@ -273,6 +354,7 @@ def plot_quality_small_multiples(
     results,
     metrics=None,
     output_path=None,
+    title_suffix="",
 ):
     """Plot one small, readable bar chart per quality metric."""
     if metrics is None:
@@ -323,6 +405,7 @@ def plot_quality_small_multiples(
                 fontsize=8,
             )
 
+    fig.suptitle(f"Recommendation Quality Metrics{title_suffix}")
     plt.tight_layout()
     _finalize_figure(fig, output_path)
 
@@ -333,6 +416,7 @@ def plot_competitive_quality(
     min_relative=0.97,
     metrics=None,
     output_path=None,
+    title_suffix="",
 ):
     """Plot quality metrics only for strategies that remain close to the best relevance."""
     if metrics is None:
@@ -391,7 +475,9 @@ def plot_competitive_quality(
                 fontsize=8,
             )
 
-    fig.suptitle(f"Competitive Quality ({primary_metric} >= {min_relative:.0%} of best)")
+    fig.suptitle(
+        f"Competitive Quality ({primary_metric} >= {min_relative:.0%} of best){title_suffix}"
+    )
     plt.tight_layout()
     _finalize_figure(fig, output_path)
     return strategies
@@ -403,6 +489,7 @@ def plot_metric_tradeoff(
     y_metric="ndcg@10",
     output_path=None,
     title=None,
+    title_suffix="",
 ):
     """Generic tradeoff scatter for thesis comparisons."""
     stats_data = results["statistics"]
@@ -423,7 +510,7 @@ def plot_metric_tradeoff(
 
     ax.set_xlabel(x_metric)
     ax.set_ylabel(y_metric)
-    ax.set_title(title or f"Tradeoff: {y_metric} vs {x_metric}")
+    ax.set_title((title or f"Tradeoff: {y_metric} vs {x_metric}") + title_suffix)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -431,7 +518,7 @@ def plot_metric_tradeoff(
 
 
 def plot_ablation_delta(
-    results, baseline="uniform", metric="ndcg@10", output_path=None
+    results, baseline="uniform", metric="ndcg@10", output_path=None, title_suffix=""
 ):
     """Plot metric deltas relative to the chosen baseline strategy."""
     stats_data = results["statistics"]
@@ -446,7 +533,7 @@ def plot_ablation_delta(
     colors = ["forestgreen" if value >= 0 else "indianred" for value in deltas]
     bars = ax.bar(strategies, deltas, color=colors, edgecolor="black")
     ax.axhline(0.0, color="black", linewidth=1)
-    ax.set_title(f"{metric} Delta vs {baseline}")
+    ax.set_title(f"{metric} Delta vs {baseline}{title_suffix}")
     ax.set_ylabel("Delta")
     ax.tick_params(axis="x", rotation=45)
     ax.grid(True, axis="y", alpha=0.2)
@@ -645,7 +732,7 @@ def plot_convergence_speed(
     return convergence_epochs
 
 
-def plot_thesis_dashboard(results, output_path=None):
+def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
     """Create a compact dashboard with thesis-critical comparisons."""
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
@@ -669,7 +756,7 @@ def plot_thesis_dashboard(results, output_path=None):
             color=colors[idx],
             label=metric,
         )
-    axes[0, 0].set_title("Relevance Metrics (@10)")
+    axes[0, 0].set_title(f"Relevance Metrics (@10){title_suffix}")
     axes[0, 0].set_xticks(x)
     axes[0, 0].set_xticklabels(strategies, rotation=45, ha="right")
     axes[0, 0].legend(loc="upper right")
@@ -691,7 +778,7 @@ def plot_thesis_dashboard(results, output_path=None):
             ha="left",
             va="bottom",
         )
-    axes[0, 1].set_title("Efficiency Frontier")
+    axes[0, 1].set_title(f"Efficiency Frontier{title_suffix}")
     axes[0, 1].set_xlabel("Total Time (s)")
     axes[0, 1].set_ylabel("NDCG@10")
     axes[0, 1].grid(True, alpha=0.3)
@@ -714,7 +801,7 @@ def plot_thesis_dashboard(results, output_path=None):
             ha="left",
             va="bottom",
         )
-    axes[1, 0].set_title("Relevance vs Coverage")
+    axes[1, 0].set_title(f"Relevance vs Coverage{title_suffix}")
     axes[1, 0].set_xlabel("item_coverage@10")
     axes[1, 0].set_ylabel("NDCG@10")
     axes[1, 0].grid(True, alpha=0.3)
@@ -734,7 +821,7 @@ def plot_thesis_dashboard(results, output_path=None):
         color="steelblue",
         label="Training",
     )
-    axes[1, 1].set_title("Time Breakdown")
+    axes[1, 1].set_title(f"Time Breakdown{title_suffix}")
     axes[1, 1].set_xlabel("Time (s)")
     axes[1, 1].legend(loc="lower right")
 
@@ -743,7 +830,11 @@ def plot_thesis_dashboard(results, output_path=None):
 
 
 def plot_training_dynamics(
-    results, target_metric="ndcg@10", threshold_percentile=0.9, output_path=None
+    results,
+    target_metric="ndcg@10",
+    threshold_percentile=0.9,
+    output_path=None,
+    title_suffix="",
 ):
     """Plot validation dynamics and convergence speed in one compact figure."""
     if "raw_results" not in results:
@@ -795,7 +886,7 @@ def plot_training_dynamics(
                 "std": float(np.std(epochs_to_converge)),
             }
 
-    axes[0].set_title(f"Validation {target_metric.upper()} Dynamics")
+    axes[0].set_title(f"Validation {target_metric.upper()} Dynamics{title_suffix}")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel(target_metric)
     axes[0].legend(loc="best")
@@ -823,7 +914,7 @@ def plot_training_dynamics(
                 fontsize=9,
             )
         axes[1].set_title(
-            f"Epochs to {threshold_percentile * 100:.0f}% of Best {target_metric.upper()}"
+            f"Epochs to {threshold_percentile * 100:.0f}% of Best {target_metric.upper()}{title_suffix}"
         )
         axes[1].set_ylabel("Epoch")
         axes[1].tick_params(axis="x", rotation=45)
@@ -836,11 +927,12 @@ def plot_training_dynamics(
     return convergence
 
 
-def save_summary_table(results, output_path):
+def save_summary_table(results, output_path, metadata=None):
     """Persist a compact strategy comparison table."""
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
     rows = []
+    feature_aware = _feature_aware_from_metadata(metadata)
 
     for strategy in strategies:
         strategy_stats = stats_data[strategy]
@@ -869,6 +961,7 @@ def save_summary_table(results, output_path):
                 "sampling_time": sampling_time,
                 "training_time": strategy_stats["timing"]["training_time"]["mean"],
                 "sampling_share": (sampling_time / total_time) if total_time > 0 else 0.0,
+                "feature_aware": feature_aware,
             }
         )
 
@@ -886,6 +979,7 @@ def save_competitive_summary(
     output_path,
     primary_metric="ndcg@10",
     min_relative=0.97,
+    metadata=None,
 ):
     """Persist a compact table for strategies that remain close to the best primary metric."""
     stats_data = results["statistics"]
@@ -901,6 +995,7 @@ def save_competitive_summary(
     ]
 
     rows = []
+    feature_aware = _feature_aware_from_metadata(metadata)
     for strategy in strategies:
         strategy_stats = stats_data[strategy]
         rows.append(
@@ -913,6 +1008,7 @@ def save_competitive_summary(
                 "novelty@10": _get_metric_value(strategy_stats, "novelty@10"),
                 "personalization@10": _get_metric_value(strategy_stats, "personalization@10"),
                 "total_time": _get_metric_value(strategy_stats, "total_time"),
+                "feature_aware": feature_aware,
             }
         )
 
@@ -965,6 +1061,7 @@ def plot_parameter_sweep(
         return None
 
     param = _infer_sweep_param(bundles, param=param)
+    context_keys = _infer_context_keys(bundles, primary_param=param)
 
     rows = []
     for bundle in bundles:
@@ -975,6 +1072,8 @@ def plot_parameter_sweep(
         rows.append(
             {
                 "param": bundle["config"].get(param),
+                "feature_aware": bool(bundle["config"].get("feature_aware", False)),
+                "context": _format_context(bundle["config"], context_keys),
                 "metric": _get_metric_value(strategy_stats, metric),
                 "results_file": bundle["results_file"],
             }
@@ -983,40 +1082,69 @@ def plot_parameter_sweep(
     if not rows:
         raise ValueError(f"Strategy '{strategy}' not found in provided result files.")
 
-    def sort_key(row):
-        value = row["param"]
-        if isinstance(value, bool):
-            return (0, int(value))
-        if isinstance(value, (int, float)):
-            return (0, float(value))
-        return (1, str(value))
-
-    rows.sort(key=sort_key)
+    rows.sort(key=lambda row: (_sort_param_value(row["param"]), row["context"]))
 
     param_label = str(param) if param is not None else "parameter"
 
-    x_labels = [str(row["param"]) for row in rows]
-    x_positions = np.arange(len(rows))
-    y_values = [row["metric"] for row in rows]
+    param_values = sorted({row["param"] for row in rows}, key=_sort_param_value)
+    x_positions = np.arange(len(param_values))
+    x_labels = [str(value) for value in param_values]
+    value_to_pos = {value: idx for idx, value in enumerate(param_values)}
+    feature_states = sorted({row["feature_aware"] for row in rows})
+    has_feature_split = param != "feature_aware" and len(feature_states) > 1
+    has_context_split = any(row["context"] for row in rows)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(x_positions, y_values, marker="o", color="steelblue", linewidth=2)
+    if has_feature_split or has_context_split:
+        grouped_rows = {}
+        for row in rows:
+            group_key = (
+                row["feature_aware"] if has_feature_split else None,
+                row["context"] if has_context_split else "",
+            )
+            grouped_rows.setdefault(group_key, []).append(row)
+
+        colors = plt.colormaps["tab10"](np.linspace(0, 1, len(grouped_rows)))
+        for color, (group_key, group_rows) in zip(colors, grouped_rows.items()):
+            group_rows.sort(key=lambda row: _sort_param_value(row["param"]))
+            xs = [value_to_pos[row["param"]] for row in group_rows]
+            ys = [row["metric"] for row in group_rows]
+            label = _line_label(
+                feature_aware=group_key[0] if has_feature_split else None,
+                context=group_key[1] if has_context_split else "",
+            )
+            ax.plot(xs, ys, marker="o", color=color, linewidth=2, label=label)
+            for x_position, y_value in zip(xs, ys):
+                ax.text(
+                    x_position,
+                    y_value,
+                    f"{y_value:.3f}",
+                    fontsize=8,
+                    ha="center",
+                    va="bottom",
+                    color=color,
+                )
+        ax.legend(loc="best")
+    else:
+        y_values = [row["metric"] for row in rows]
+        row_positions = [value_to_pos[row["param"]] for row in rows]
+        ax.plot(row_positions, y_values, marker="o", color="steelblue", linewidth=2)
+        for x_position, row in zip(row_positions, rows):
+            ax.text(
+                x_position,
+                row["metric"],
+                f"{row['metric']:.3f}",
+                fontsize=8,
+                ha="center",
+                va="bottom",
+            )
+
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=45, ha="right")
     ax.set_xlabel(param_label)
     ax.set_ylabel(metric)
     ax.set_title(f"{strategy}: {metric} across {param_label}")
     ax.grid(True, alpha=0.3)
-
-    for x_position, row in zip(x_positions, rows):
-        ax.text(
-            x_position,
-            row["metric"],
-            f"{row['metric']:.3f}",
-            fontsize=8,
-            ha="center",
-            va="bottom",
-        )
 
     plt.tight_layout()
     _finalize_figure(fig, output_path)
@@ -1044,10 +1172,13 @@ def plot_multi_strategy_sweep(
         return None
 
     param = _infer_sweep_param(bundles, param=param)
+    context_keys = _infer_context_keys(bundles, primary_param=param)
     rows = []
     for bundle in bundles:
         stats = bundle["results"].get("statistics", {})
         param_value = bundle["config"].get(param)
+        feature_aware = bool(bundle["config"].get("feature_aware", False))
+        context = _format_context(bundle["config"], context_keys)
         for strategy in strategies:
             if strategy not in stats:
                 continue
@@ -1055,6 +1186,8 @@ def plot_multi_strategy_sweep(
                 {
                     "param": param_value,
                     "strategy": strategy,
+                    "feature_aware": feature_aware,
+                    "context": context,
                     "metric": _get_metric_value(stats[strategy], metric),
                     "results_file": bundle["results_file"],
                 }
@@ -1063,19 +1196,15 @@ def plot_multi_strategy_sweep(
     if not rows:
         raise ValueError("None of the requested strategies were found in the provided results.")
 
-    def sort_key(value):
-        if isinstance(value, bool):
-            return (0, int(value))
-        if isinstance(value, (int, float)):
-            return (0, float(value))
-        return (1, str(value))
-
     param_label = str(param) if param is not None else "parameter"
 
-    param_values = sorted({row["param"] for row in rows}, key=sort_key)
+    param_values = sorted({row["param"] for row in rows}, key=_sort_param_value)
     x_positions = np.arange(len(param_values))
     x_labels = [str(value) for value in param_values]
     value_to_pos = {value: idx for idx, value in enumerate(param_values)}
+    feature_states = sorted({row["feature_aware"] for row in rows})
+    has_feature_split = param != "feature_aware" and len(feature_states) > 1
+    has_context_split = any(row["context"] for row in rows)
 
     fig, ax = plt.subplots(figsize=(10, 6))
     colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
@@ -1085,20 +1214,46 @@ def plot_multi_strategy_sweep(
         strategy_rows = [row for row in rows if row["strategy"] == strategy]
         if not strategy_rows:
             continue
-        strategy_rows.sort(key=lambda row: sort_key(row["param"]))
-        xs = [value_to_pos[row["param"]] for row in strategy_rows]
-        ys = [row["metric"] for row in strategy_rows]
-        ax.plot(xs, ys, marker="o", linewidth=2, color=color, label=strategy)
-        for x_value, y_value in zip(xs, ys):
-            ax.text(
-                x_value,
-                y_value,
-                f"{y_value:.3f}",
-                fontsize=8,
-                ha="center",
-                va="bottom",
-                color=color,
+        grouped_rows = {}
+        if has_feature_split or has_context_split:
+            for row in strategy_rows:
+                group_key = (
+                    row["feature_aware"] if has_feature_split else None,
+                    row["context"] if has_context_split else "",
+                )
+                grouped_rows.setdefault(group_key, []).append(row)
+        else:
+            grouped_rows[(None, "")] = strategy_rows
+
+        for group_key, group_rows in grouped_rows.items():
+            group_rows.sort(key=lambda row: _sort_param_value(row["param"]))
+            xs = [value_to_pos[row["param"]] for row in group_rows]
+            ys = [row["metric"] for row in group_rows]
+            line_style = "--" if group_key[0] else "-"
+            label = _line_label(
+                strategy=strategy,
+                feature_aware=group_key[0] if has_feature_split else None,
+                context=group_key[1] if has_context_split else "",
             )
+            ax.plot(
+                xs,
+                ys,
+                marker="o",
+                linewidth=2,
+                color=color,
+                linestyle=line_style,
+                label=label,
+            )
+            for x_value, y_value in zip(xs, ys):
+                ax.text(
+                    x_value,
+                    y_value,
+                    f"{y_value:.3f}",
+                    fontsize=8,
+                    ha="center",
+                    va="bottom",
+                    color=color,
+                )
         csv_rows.extend(strategy_rows)
 
     ax.set_xticks(x_positions)
@@ -1119,6 +1274,203 @@ def plot_multi_strategy_sweep(
             writer.writerows(csv_rows)
 
     return csv_rows
+
+
+def build_feature_uplift_rows(results_files, strategies=None, param=None):
+    """Build paired id-only vs feature-aware comparison rows."""
+    bundles = _load_sweep_bundles(results_files)
+    if not bundles:
+        return None, None
+
+    param = _infer_sweep_param(bundles, param=param)
+    context_keys = _infer_context_keys(bundles, primary_param=param)
+
+    base_rows = []
+    for bundle in bundles:
+        stats = bundle["results"].get("statistics", {})
+        available_strategies = strategies or sorted(stats.keys())
+        feature_aware = bool(bundle["config"].get("feature_aware", False))
+        param_value = bundle["config"].get(param)
+        context = _format_context(bundle["config"], context_keys)
+        for strategy in available_strategies:
+            if strategy not in stats:
+                continue
+            strategy_stats = stats[strategy]
+            base_rows.append(
+                {
+                    "strategy": strategy,
+                    "sweep_param": param,
+                    "sweep_value": param_value,
+                    "context": context,
+                    "feature_aware": feature_aware,
+                    "ndcg@10": _get_metric_value(strategy_stats, "ndcg@10"),
+                    "recall@10": _get_metric_value(strategy_stats, "recall@10"),
+                    "item_coverage@10": _get_metric_value(
+                        strategy_stats, "item_coverage@10"
+                    ),
+                    "novelty@10": _get_metric_value(strategy_stats, "novelty@10"),
+                    "total_time": _get_metric_value(strategy_stats, "total_time"),
+                    "results_file": bundle["results_file"],
+                }
+            )
+
+    if not base_rows:
+        return None, param
+
+    if len({row["feature_aware"] for row in base_rows}) < 2:
+        return None, param
+
+    grouped = {}
+    for row in base_rows:
+        pair_key = (
+            row["strategy"],
+            row["context"],
+            None if param == "feature_aware" else row["sweep_value"],
+        )
+        grouped.setdefault(pair_key, {})[row["feature_aware"]] = row
+
+    uplift_rows = []
+    for (strategy, context, sweep_value), pair in grouped.items():
+        if False not in pair or True not in pair:
+            continue
+        id_row = pair[False]
+        feature_row = pair[True]
+        uplift_rows.append(
+            {
+                "strategy": strategy,
+                "sweep_param": param,
+                "sweep_value": sweep_value,
+                "context": context,
+                "id_ndcg@10": id_row["ndcg@10"],
+                "feature_ndcg@10": feature_row["ndcg@10"],
+                "delta_ndcg@10": feature_row["ndcg@10"] - id_row["ndcg@10"],
+                "id_recall@10": id_row["recall@10"],
+                "feature_recall@10": feature_row["recall@10"],
+                "delta_recall@10": feature_row["recall@10"] - id_row["recall@10"],
+                "id_item_coverage@10": id_row["item_coverage@10"],
+                "feature_item_coverage@10": feature_row["item_coverage@10"],
+                "delta_item_coverage@10": feature_row["item_coverage@10"]
+                - id_row["item_coverage@10"],
+                "id_novelty@10": id_row["novelty@10"],
+                "feature_novelty@10": feature_row["novelty@10"],
+                "delta_novelty@10": feature_row["novelty@10"] - id_row["novelty@10"],
+                "id_total_time": id_row["total_time"],
+                "feature_total_time": feature_row["total_time"],
+                "delta_total_time": feature_row["total_time"] - id_row["total_time"],
+            }
+        )
+
+    if not uplift_rows:
+        return None, param
+
+    uplift_rows.sort(
+        key=lambda row: (
+            row["strategy"],
+            _sort_param_value(row["sweep_value"]),
+            row["context"],
+        )
+    )
+    return uplift_rows, param
+
+
+def save_feature_uplift_table(results_files, output_path, strategies=None, param=None):
+    """Persist paired feature-aware uplift statistics across runs."""
+    rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
+    if not rows:
+        return None
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+
+def _feature_uplift_label(row):
+    """Build a compact x-axis label for feature uplift plots."""
+    label = row["strategy"]
+    if row.get("sweep_value") is not None:
+        label += f"\n{row['sweep_param']}={row['sweep_value']}"
+    if row.get("context"):
+        label += f"\n{row['context']}"
+    return label
+
+
+def plot_feature_uplift(results_files, output_path, strategies=None, param=None):
+    """Plot NDCG and Recall uplift from enabling feature-aware mode."""
+    rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
+    if not rows:
+        return None
+
+    labels = [_feature_uplift_label(row) for row in rows]
+    x = np.arange(len(rows))
+    width = 0.38
+
+    fig, ax = plt.subplots(figsize=(max(9, len(rows) * 1.4), 6))
+    ndcg_deltas = [row["delta_ndcg@10"] for row in rows]
+    recall_deltas = [row["delta_recall@10"] for row in rows]
+    ax.bar(x - width / 2, ndcg_deltas, width, label="delta_ndcg@10", color="steelblue")
+    ax.bar(
+        x + width / 2,
+        recall_deltas,
+        width,
+        label="delta_recall@10",
+        color="darkorange",
+    )
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_ylabel("Feature-aware delta")
+    ax.set_title("Feature-aware uplift by strategy")
+    ax.legend(loc="best")
+    ax.grid(True, axis="y", alpha=0.2)
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return rows
+
+
+def plot_feature_quality_tradeoff(
+    results_files,
+    output_path,
+    strategies=None,
+    param=None,
+    quality_metric="delta_item_coverage@10",
+):
+    """Plot whether feature-aware gains also change recommendation breadth."""
+    rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
+    if not rows:
+        return None
+
+    x_values = [row[quality_metric] for row in rows]
+    y_values = [row["delta_ndcg@10"] for row in rows]
+    sizes = [
+        max(60, abs(row["delta_total_time"]) * 20 + 60)
+        for row in rows
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.scatter(x_values, y_values, s=sizes, color="seagreen", edgecolor="black")
+    for x_value, y_value, row in zip(x_values, y_values, rows):
+        ax.text(
+            x_value,
+            y_value,
+            _feature_uplift_label(row).replace("\n", " | "),
+            fontsize=8,
+            ha="left",
+            va="bottom",
+        )
+
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.axvline(0.0, color="black", linewidth=1)
+    ax.set_xlabel(quality_metric)
+    ax.set_ylabel("delta_ndcg@10")
+    ax.set_title("Feature-aware relevance vs quality tradeoff")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return rows
 
 
 def statistical_significance_test(results, metric="ndcg@10", baseline="uniform", quiet=False):
@@ -1214,23 +1566,39 @@ def generate_full_report(results_file, output_dir=None):
     os.makedirs(output_dir, exist_ok=True)
 
     results = load_results(results_file)
-    save_summary_table(results, os.path.join(output_dir, "summary_metrics.csv"))
-    save_competitive_summary(
-        results, os.path.join(output_dir, "competitive_summary.csv")
+    metadata = _load_metadata_for_results(results_file)
+    title_suffix = _title_suffix_from_metadata(metadata)
+    save_summary_table(
+        results, os.path.join(output_dir, "summary_metrics.csv"), metadata=metadata
     )
-    plot_thesis_dashboard(results, output_path=os.path.join(output_dir, "dashboard.png"))
+    save_competitive_summary(
+        results,
+        os.path.join(output_dir, "competitive_summary.csv"),
+        metadata=metadata,
+    )
+    plot_thesis_dashboard(
+        results,
+        output_path=os.path.join(output_dir, "dashboard.png"),
+        title_suffix=title_suffix,
+    )
     plot_all_metrics(
-        results, output_path=os.path.join(output_dir, "relevance_metrics.png")
+        results,
+        output_path=os.path.join(output_dir, "relevance_metrics.png"),
+        title_suffix=title_suffix,
     )
     has_quality_metrics = any(
         stats_data.get("quality_metrics") for stats_data in results["statistics"].values()
     )
     if has_quality_metrics:
         plot_quality_small_multiples(
-            results, output_path=os.path.join(output_dir, "quality_metrics.png")
+            results,
+            output_path=os.path.join(output_dir, "quality_metrics.png"),
+            title_suffix=title_suffix,
         )
         plot_competitive_quality(
-            results, output_path=os.path.join(output_dir, "competitive_quality.png")
+            results,
+            output_path=os.path.join(output_dir, "competitive_quality.png"),
+            title_suffix=title_suffix,
         )
         plot_metric_tradeoff(
             results,
@@ -1238,6 +1606,7 @@ def generate_full_report(results_file, output_dir=None):
             y_metric="ndcg@10",
             output_path=os.path.join(output_dir, "ndcg_vs_coverage.png"),
             title="NDCG@10 vs Item Coverage@10",
+            title_suffix=title_suffix,
         )
         plot_metric_tradeoff(
             results,
@@ -1245,6 +1614,7 @@ def generate_full_report(results_file, output_dir=None):
             y_metric="ndcg@10",
             output_path=os.path.join(output_dir, "ndcg_vs_novelty.png"),
             title="NDCG@10 vs Novelty@10",
+            title_suffix=title_suffix,
         )
     plot_metric_tradeoff(
         results,
@@ -1252,17 +1622,21 @@ def generate_full_report(results_file, output_dir=None):
         y_metric="ndcg@10",
         output_path=os.path.join(output_dir, "ndcg_vs_time.png"),
         title="NDCG@10 vs Total Time",
+        title_suffix=title_suffix,
     )
     plot_ablation_delta(
         results,
         baseline="uniform",
         metric="ndcg@10",
         output_path=os.path.join(output_dir, "ndcg10_delta_vs_uniform.png"),
+        title_suffix=title_suffix,
     )
 
     if "raw_results" in results:
         plot_training_dynamics(
-            results, output_path=os.path.join(output_dir, "training_dynamics.png")
+            results,
+            output_path=os.path.join(output_dir, "training_dynamics.png"),
+            title_suffix=title_suffix,
         )
 
     save_significance_table(
@@ -1309,6 +1683,24 @@ if __name__ == "__main__":
                 output_path=os.path.join(output_dir, "parameter_sweep_multi.png"),
                 csv_path=os.path.join(output_dir, "parameter_sweep_multi.csv"),
             )
+            save_feature_uplift_table(
+                args.results_files,
+                os.path.join(output_dir, "feature_uplift.csv"),
+                strategies=args.sweep_strategies,
+                param=args.sweep_param,
+            )
+            plot_feature_uplift(
+                args.results_files,
+                os.path.join(output_dir, "feature_uplift.png"),
+                strategies=args.sweep_strategies,
+                param=args.sweep_param,
+            )
+            plot_feature_quality_tradeoff(
+                args.results_files,
+                os.path.join(output_dir, "feature_quality_tradeoff.png"),
+                strategies=args.sweep_strategies,
+                param=args.sweep_param,
+            )
         else:
             plot_parameter_sweep(
                 args.results_files,
@@ -1317,4 +1709,22 @@ if __name__ == "__main__":
                 param=args.sweep_param,
                 output_path=os.path.join(output_dir, "parameter_sweep.png"),
                 csv_path=os.path.join(output_dir, "parameter_sweep.csv"),
+            )
+            save_feature_uplift_table(
+                args.results_files,
+                os.path.join(output_dir, "feature_uplift.csv"),
+                strategies=[args.sweep_strategy],
+                param=args.sweep_param,
+            )
+            plot_feature_uplift(
+                args.results_files,
+                os.path.join(output_dir, "feature_uplift.png"),
+                strategies=[args.sweep_strategy],
+                param=args.sweep_param,
+            )
+            plot_feature_quality_tradeoff(
+                args.results_files,
+                os.path.join(output_dir, "feature_quality_tradeoff.png"),
+                strategies=[args.sweep_strategy],
+                param=args.sweep_param,
             )
