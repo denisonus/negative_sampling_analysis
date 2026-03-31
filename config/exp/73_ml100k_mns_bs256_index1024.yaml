@@ -1,4 +1,4 @@
-# In-batch + uniform extension: push shared index size beyond the current best.
+# In-batch + uniform interaction: smaller train batches with a large shared uniform set.
 seed: 42
 dataset: 'ml-100k'
 data_path: 'dataset/'
@@ -12,7 +12,7 @@ dropout: 0.1
 
 # Training
 epochs: 35
-train_batch_size: 512
+train_batch_size: 256
 learning_rate: 0.0003
 weight_decay: 0.0005
 patience: 6
@@ -28,7 +28,7 @@ curriculum_warmup_epochs: 8
 tau_plus: 0.05
 smoothing: 0.75
 logq_correction: true
-mixed_index_batch_size: 3072
+mixed_index_batch_size: 1024
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']

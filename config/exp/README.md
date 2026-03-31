@@ -15,7 +15,8 @@ Main knob sweeps:
 - debiased `tau_plus`: `10_ml100k_benchmark.yaml`, `50_ml100k_debiased_tau_0p10.yaml`
 - in-batch batch size: `10_ml100k_benchmark.yaml`, `60_ml100k_inbatch_bs1024.yaml`
 - hard-uniform ratio: `61_ml100k_hard_uniform_ratio_0p25.yaml`, `10_ml100k_benchmark.yaml`, `62_ml100k_hard_uniform_ratio_0p75.yaml`
-- in-batch + uniform index batch size: `10_ml100k_benchmark.yaml`, `70_ml100k_mns_index_1024.yaml`, `71_ml100k_mns_index_2048.yaml`, `72_ml100k_mns_index_3072.yaml`, `73_ml100k_mns_index_4096.yaml`
+- in-batch + uniform index batch size: `10_ml100k_benchmark.yaml`, `72_ml100k_mns_index_768.yaml`, `70_ml100k_mns_index_1024.yaml`, `71_ml100k_mns_index_2048.yaml`
+- in-batch + uniform batch interaction: `73_ml100k_mns_bs256_index1024.yaml`
 
 Promising interaction follow-ups:
 - `63_ml100k_hard_uniform_pool50_ratio0p75.yaml`

@@ -1,4 +1,4 @@
-# In-batch + uniform extension: check whether quality keeps rising or plateaus.
+# In-batch + uniform refinement: test the region between 512 and 1024 shared negatives.
 seed: 42
 dataset: 'ml-100k'
 data_path: 'dataset/'
@@ -28,7 +28,7 @@ curriculum_warmup_epochs: 8
 tau_plus: 0.05
 smoothing: 0.75
 logq_correction: true
-mixed_index_batch_size: 4096
+mixed_index_batch_size: 768
 
 # Evaluation
 metrics: ['Recall', 'NDCG', 'MRR', 'Hit', 'Precision', 'MAP']
