@@ -20,6 +20,7 @@ from utils import (
     extract_feature_data,
     build_user_item_dict_from_train,
     compute_item_popularity_from_train,
+    compute_user_interaction_counts_from_train,
     get_train_interactions,
     SimpleDataLoader,
     Trainer,
@@ -107,6 +108,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     train_interactions = get_train_interactions(train_data)
     user_item_dict = build_user_item_dict_from_train(train_interactions)
     item_popularity = compute_item_popularity_from_train(train_interactions, num_items)
+    user_train_counts = compute_user_interaction_counts_from_train(train_interactions)
     print(f"Training interactions: {num_train}")
 
     train_loader = SimpleDataLoader(
@@ -189,6 +191,14 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     print("\nFinal Test Evaluation...")
     test_rankings = evaluator.rank(model, test_data)
     test_metrics = evaluator.evaluate_from_rankings(test_rankings)
+    bucket_metrics = evaluator.evaluate_user_buckets_from_rankings(
+        test_rankings,
+        user_train_counts=user_train_counts,
+    )
+    if not bucket_metrics and 10 not in evaluator.topk:
+        print(
+            "Warning: user bucket metrics skipped because 10 is not in configured topk"
+        )
     quality_metrics = compute_quality_metrics(
         test_rankings["topk_items"],
         item_popularity=item_popularity,
@@ -220,6 +230,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         "strategy": sampler.name,
         "train_history": train_history,
         "test_metrics": test_metrics,
+        "bucket_metrics": bucket_metrics,
         "quality_metrics": quality_metrics,
         "timing": {
             "total_time": train_history.get("total_time", 0),
@@ -310,6 +321,7 @@ def compute_statistics(all_results):
 
         # Collect all metrics across runs
         metrics_values = {}
+        bucket_values = {}
         quality_values = {}
         timing_values = {"total_time": [], "sampling_time": [], "training_time": []}
 
@@ -318,6 +330,14 @@ def compute_statistics(all_results):
                 if metric not in metrics_values:
                     metrics_values[metric] = []
                 metrics_values[metric].append(value)
+
+            for bucket_label, bucket_metrics in run.get("bucket_metrics", {}).items():
+                if bucket_label not in bucket_values:
+                    bucket_values[bucket_label] = {}
+                for metric, value in bucket_metrics.items():
+                    if metric not in bucket_values[bucket_label]:
+                        bucket_values[bucket_label][metric] = []
+                    bucket_values[bucket_label][metric].append(value)
 
             for metric, value in run.get("quality_metrics", {}).items():
                 if metric not in quality_values:
@@ -331,6 +351,7 @@ def compute_statistics(all_results):
         # Compute statistics
         stats_results[strategy] = {
             "metrics": {},
+            "bucket_metrics": {},
             "quality_metrics": {},
             "timing": {},
             "num_runs": len(runs),
@@ -338,6 +359,13 @@ def compute_statistics(all_results):
 
         for metric, values in metrics_values.items():
             stats_results[strategy]["metrics"][metric] = summarize_values(values)
+
+        for bucket_label, metric_values in bucket_values.items():
+            stats_results[strategy]["bucket_metrics"][bucket_label] = {}
+            for metric, values in metric_values.items():
+                stats_results[strategy]["bucket_metrics"][bucket_label][metric] = (
+                    summarize_values(values)
+                )
 
         for metric, values in quality_values.items():
             stats_results[strategy]["quality_metrics"][metric] = summarize_values(values)
@@ -434,6 +462,7 @@ def save_results(all_results, output_dir="results", config=None):
                 {
                     "seed": r["seed"],
                     "test_metrics": r["test_metrics"],
+                    "bucket_metrics": r.get("bucket_metrics", {}),
                     "quality_metrics": r.get("quality_metrics", {}),
                     "timing": r["timing"],
                     "best_epoch": r["train_history"].get("best_epoch", -1),

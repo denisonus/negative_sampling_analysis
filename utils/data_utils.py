@@ -253,6 +253,14 @@ def compute_item_popularity_from_train(train_interactions, num_items):
     return popularity + 1  # Add smoothing
 
 
+def compute_user_interaction_counts_from_train(train_interactions):
+    """Count training interactions per user."""
+    counts = defaultdict(int)
+    for user, _ in train_interactions:
+        counts[int(user)] += 1
+    return dict(counts)
+
+
 def get_train_interactions(train_data):
     """Extract user-item pairs from training data."""
     interactions = []

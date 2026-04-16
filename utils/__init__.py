@@ -6,6 +6,7 @@ from .data_utils import (
     compute_item_popularity,
     build_user_item_dict_from_train,
     compute_item_popularity_from_train,
+    compute_user_interaction_counts_from_train,
     get_train_interactions,
     SimpleDataLoader,
 )

@@ -55,6 +55,18 @@ def _get_metric_value(strategy_stats, metric):
     return 0.0
 
 
+def _bucket_sort_key(bucket_label):
+    order = {"0": 0, "1-5": 1, "6-20": 2, "21+": 3}
+    return order.get(bucket_label, len(order))
+
+
+def _collect_bucket_labels(stats_data):
+    labels = set()
+    for strategy_stats in stats_data.values():
+        labels.update(strategy_stats.get("bucket_metrics", {}).keys())
+    return sorted(labels, key=_bucket_sort_key)
+
+
 def _feature_aware_from_metadata(metadata):
     """Extract feature-aware flag from sibling metadata when available."""
     if not metadata:
@@ -552,6 +564,209 @@ def plot_ablation_delta(
     plt.tight_layout()
     _finalize_figure(fig, output_path)
     return deltas
+
+
+def save_user_bucket_metrics_table(results, output_path):
+    """Persist aggregated per-user activity bucket metrics to CSV."""
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data)
+    bucket_labels = _collect_bucket_labels(stats_data)
+    metrics = ["ndcg@10", "recall@10", "hit@10"]
+
+    rows = []
+    for strategy in strategies:
+        strategy_bucket_metrics = stats_data[strategy].get("bucket_metrics", {})
+        for bucket_label in bucket_labels:
+            bucket_metrics = strategy_bucket_metrics.get(bucket_label, {})
+            for metric in metrics:
+                metric_stats = bucket_metrics.get(metric)
+                if metric_stats is None:
+                    continue
+                rows.append(
+                    {
+                        "strategy": strategy,
+                        "bucket": bucket_label,
+                        "metric": metric,
+                        "mean": metric_stats.get("mean", 0.0),
+                        "std": metric_stats.get("std", 0.0),
+                        "ci_lower": metric_stats.get("ci_lower", 0.0),
+                        "ci_upper": metric_stats.get("ci_upper", 0.0),
+                        "num_runs": len(metric_stats.get("values", [])),
+                    }
+                )
+
+    if not rows:
+        return []
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return rows
+
+
+def plot_user_bucket_metrics(results, output_path=None, title_suffix=""):
+    """Plot grouped bucket metrics for NDCG, Recall, and Hit at 10."""
+    stats_data = results["statistics"]
+    strategies = _sorted_strategies(stats_data)
+    bucket_labels = _collect_bucket_labels(stats_data)
+    if not bucket_labels:
+        return None
+
+    metrics = ["ndcg@10", "recall@10", "hit@10"]
+    colors = plt.colormaps["Set2"](np.linspace(0, 1, len(bucket_labels)))
+    fig, axes = plt.subplots(1, len(metrics), figsize=(18, 5), sharex=True)
+
+    if len(metrics) == 1:
+        axes = [axes]
+
+    x = np.arange(len(strategies))
+    width = 0.8 / max(len(bucket_labels), 1)
+
+    for ax, metric in zip(axes, metrics):
+        for idx, bucket_label in enumerate(bucket_labels):
+            values = [
+                stats_data[strategy]
+                .get("bucket_metrics", {})
+                .get(bucket_label, {})
+                .get(metric, {})
+                .get("mean", 0.0)
+                for strategy in strategies
+            ]
+            errors = [
+                stats_data[strategy]
+                .get("bucket_metrics", {})
+                .get(bucket_label, {})
+                .get(metric, {})
+                .get("std", 0.0)
+                for strategy in strategies
+            ]
+            offset = (idx - len(bucket_labels) / 2 + 0.5) * width
+            ax.bar(
+                x + offset,
+                values,
+                width,
+                label=bucket_label,
+                color=colors[idx],
+                yerr=errors,
+                capsize=3,
+            )
+
+        ax.set_title(metric.upper())
+        ax.set_xticks(x)
+        ax.set_xticklabels(strategies, rotation=45, ha="right")
+        ax.grid(True, axis="y", alpha=0.2)
+
+    axes[0].set_ylabel("Metric Value")
+    fig.suptitle(f"Per-User Activity Bucket Metrics{title_suffix}")
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, title="Train interactions", loc="upper center", ncol=len(bucket_labels))
+    plt.tight_layout(rect=(0, 0, 1, 0.9))
+    _finalize_figure(fig, output_path)
+    return bucket_labels
+
+
+def plot_user_bucket_delta_heatmap(
+    results,
+    baseline="uniform",
+    metric="ndcg@10",
+    output_path=None,
+    title_suffix="",
+):
+    """Plot a compact heatmap of per-bucket deltas versus a baseline strategy."""
+    stats_data = results["statistics"]
+    if baseline not in stats_data:
+        return None
+
+    bucket_labels = _collect_bucket_labels(stats_data)
+    if not bucket_labels:
+        return None
+
+    strategies = [
+        strategy
+        for strategy in _sorted_strategies(stats_data, metric=metric)
+        if strategy != baseline
+    ]
+    if not strategies:
+        return None
+
+    delta_rows = []
+    row_labels = []
+    baseline_bucket_metrics = stats_data[baseline].get("bucket_metrics", {})
+
+    for strategy in strategies:
+        strategy_bucket_metrics = stats_data[strategy].get("bucket_metrics", {})
+        row = []
+        has_value = False
+        for bucket_label in bucket_labels:
+            baseline_stats = baseline_bucket_metrics.get(bucket_label, {}).get(metric)
+            strategy_stats = strategy_bucket_metrics.get(bucket_label, {}).get(metric)
+            if baseline_stats is None or strategy_stats is None:
+                row.append(np.nan)
+                continue
+            has_value = True
+            row.append(strategy_stats["mean"] - baseline_stats["mean"])
+        if has_value:
+            delta_rows.append(row)
+            row_labels.append(strategy)
+
+    if not delta_rows:
+        return None
+
+    heatmap = np.asarray(delta_rows, dtype=np.float64)
+    finite_values = heatmap[np.isfinite(heatmap)]
+    if finite_values.size == 0:
+        return None
+
+    max_abs = float(np.max(np.abs(finite_values)))
+    if np.isclose(max_abs, 0.0):
+        max_abs = 1e-6
+
+    fig, ax = plt.subplots(
+        figsize=(max(6, 1.4 * len(bucket_labels)), max(3, 0.7 * len(row_labels) + 1.5))
+    )
+    cmap = plt.get_cmap("RdYlGn")
+    if hasattr(cmap, "copy"):
+        cmap = cmap.copy()
+    cmap.set_bad(color="lightgray")
+    image = ax.imshow(
+        np.ma.masked_invalid(heatmap),
+        cmap=cmap,
+        vmin=-max_abs,
+        vmax=max_abs,
+        aspect="auto",
+    )
+
+    ax.set_xticks(np.arange(len(bucket_labels)))
+    ax.set_xticklabels(bucket_labels)
+    ax.set_yticks(np.arange(len(row_labels)))
+    ax.set_yticklabels(row_labels)
+    ax.set_xlabel("Train interactions")
+    ax.set_title(f"{metric.upper()} Delta vs {baseline}{title_suffix}")
+
+    for row_idx in range(heatmap.shape[0]):
+        for col_idx in range(heatmap.shape[1]):
+            value = heatmap[row_idx, col_idx]
+            if np.isnan(value):
+                ax.text(col_idx, row_idx, "NA", ha="center", va="center", fontsize=8)
+                continue
+            text_color = "white" if abs(value) > max_abs * 0.5 else "black"
+            ax.text(
+                col_idx,
+                row_idx,
+                f"{value:+.3f}",
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=8,
+            )
+
+    fig.colorbar(image, ax=ax, shrink=0.85, label="Delta")
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return heatmap
 
 
 def _extract_valid_series(valid_history, metric="ndcg@10"):
@@ -1614,6 +1829,25 @@ def generate_full_report(results_file, output_dir=None):
             y_metric="ndcg@10",
             output_path=os.path.join(output_dir, "ndcg_vs_novelty.png"),
             title="NDCG@10 vs Novelty@10",
+            title_suffix=title_suffix,
+        )
+    has_bucket_metrics = any(
+        stats_data.get("bucket_metrics") for stats_data in results["statistics"].values()
+    )
+    if has_bucket_metrics:
+        save_user_bucket_metrics_table(
+            results, os.path.join(output_dir, "user_bucket_metrics.csv")
+        )
+        plot_user_bucket_metrics(
+            results,
+            output_path=os.path.join(output_dir, "user_bucket_metrics.png"),
+            title_suffix=title_suffix,
+        )
+        plot_user_bucket_delta_heatmap(
+            results,
+            baseline="uniform",
+            metric="ndcg@10",
+            output_path=os.path.join(output_dir, "user_bucket_ndcg10_delta_heatmap.png"),
             title_suffix=title_suffix,
         )
     plot_metric_tradeoff(

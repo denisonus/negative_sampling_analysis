@@ -6,6 +6,9 @@ import torch
 from collections import defaultdict
 from recbole.evaluator.metrics import Hit, Recall, NDCG, MRR, Precision, MAP
 
+if not hasattr(np, "float"):  # pragma: no cover - RecBole still references np.float
+    setattr(np, "float", float)
+
 
 class MockConfig:
     """Mock config object for RecBole metrics."""
@@ -28,6 +31,7 @@ class Evaluator:
         "precision": Precision,
         "map": MAP,
     }
+    ACTIVITY_BUCKET_ORDER = ("0", "1-5", "6-20", "21+")
 
     def __init__(
         self,
@@ -59,6 +63,44 @@ class Evaluator:
             "pos_index": np.empty((0, self.max_k), dtype=bool),
             "pos_len": np.array([], dtype=np.int64),
         }
+
+    def _get_metric_instance(self, metric_name):
+        metric_name = metric_name.lower()
+        if metric_name in self.metric_instances:
+            return self.metric_instances[metric_name]
+        return self.METRIC_CLASSES[metric_name](MockConfig(self.topk))
+
+    @classmethod
+    def _activity_bucket_label(cls, interaction_count):
+        if interaction_count <= 0:
+            return "0"
+        if interaction_count <= 5:
+            return "1-5"
+        if interaction_count <= 20:
+            return "6-20"
+        return "21+"
+
+    @classmethod
+    def _activity_bucket_sort_key(cls, label):
+        try:
+            return cls.ACTIVITY_BUCKET_ORDER.index(label)
+        except ValueError:
+            return len(cls.ACTIVITY_BUCKET_ORDER)
+
+    def _metric_values_from_rankings(self, rankings, metric_name):
+        pos_index = rankings["pos_index"]
+        pos_len = rankings["pos_len"]
+
+        if pos_index.size == 0:
+            return np.empty((0, self.max_k), dtype=np.float64)
+
+        metric_instance = self._get_metric_instance(metric_name)
+        if metric_name in ["recall", "ndcg", "map"]:
+            metric_values = metric_instance.metric_info(pos_index, pos_len)
+        else:
+            metric_values = metric_instance.metric_info(pos_index)
+
+        return np.asarray(metric_values, dtype=np.float64)
 
     def _extract_interactions(self, test_data):
         """Extract user-item interactions from test data."""
@@ -167,6 +209,51 @@ class Evaluator:
             for k in self.topk:
                 idx = k - 1 if k <= len(avg_values) else -1
                 results[f"{metric_name}@{k}"] = float(avg_values[idx])
+
+        return results
+
+    def evaluate_user_buckets_from_rankings(
+        self,
+        rankings,
+        user_train_counts,
+        metrics=("ndcg", "recall", "hit"),
+        target_k=10,
+    ):
+        """Aggregate selected metrics by user activity bucket."""
+        if target_k not in self.topk:
+            return {}
+
+        user_ids = np.asarray(rankings["user_ids"], dtype=np.int64)
+        if user_ids.size == 0:
+            return {}
+
+        metric_index = target_k - 1
+        bucketed_values = defaultdict(lambda: defaultdict(list))
+
+        for metric_name in metrics:
+            metric_values = self._metric_values_from_rankings(rankings, metric_name)
+            if metric_values.ndim != 2 or metric_values.shape[0] != user_ids.size:
+                continue
+            if metric_index >= metric_values.shape[1]:
+                continue
+
+            metric_label = f"{metric_name}@{target_k}"
+            per_user_values = metric_values[:, metric_index]
+            for user_id, value in zip(user_ids, per_user_values):
+                interaction_count = int(user_train_counts.get(int(user_id), 0))
+                bucket_label = self._activity_bucket_label(interaction_count)
+                bucketed_values[bucket_label][metric_label].append(float(value))
+
+        results = {}
+        for bucket_label in sorted(
+            bucketed_values.keys(), key=self._activity_bucket_sort_key
+        ):
+            results[bucket_label] = {}
+            for metric_label, values in bucketed_values[bucket_label].items():
+                if values:
+                    results[bucket_label][metric_label] = float(
+                        np.mean(np.asarray(values, dtype=np.float64))
+                    )
 
         return results
 
