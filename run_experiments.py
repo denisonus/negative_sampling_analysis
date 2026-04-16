@@ -25,6 +25,12 @@ from utils import (
     Trainer,
     InBatchTrainer,
     MixedInBatchTrainer,
+    ItemMetadataLookup,
+    extract_test_user_items,
+    build_recommendation_log,
+    build_recommendation_summary_rows,
+    build_recommendation_detail_rows,
+    write_csv_rows,
 )
 from evaluation import Evaluator, compute_quality_metrics
 
@@ -191,6 +197,18 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         seed=config.get("seed", 42) if seed is None else seed,
     )
 
+    item_metadata = ItemMetadataLookup.build(
+        dataset=dataset,
+        dataset_name=config["dataset"],
+        data_path=config.get("data_path", "dataset/"),
+        fallback_dataset_name="ml-1m",
+    )
+    recommendation_log = build_recommendation_log(
+        rankings=test_rankings,
+        test_user_items=extract_test_user_items(test_data),
+        item_metadata=item_metadata,
+    )
+
     print(f"\nTest Results for {sampling_strategy}:")
     for metric, value in sorted(test_metrics.items()):
         print(f"  {metric}: {value:.4f}")
@@ -214,6 +232,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
             "num_train_interactions": num_train,
             "feature_aware": feature_aware,
         },
+        "recommendation_log": recommendation_log,
     }
 
 
@@ -466,6 +485,47 @@ def save_results(all_results, output_dir="results", config=None):
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
+    recommendation_log_paths = []
+    recommendation_log_dir = os.path.join(run_output_dir, "recommendation_logs")
+    for strategy, runs in all_results.items():
+        for idx, run in enumerate(runs):
+            recommendation_log = run.get("recommendation_log")
+            if recommendation_log is None:
+                continue
+
+            if not os.path.exists(recommendation_log_dir):
+                os.makedirs(recommendation_log_dir)
+
+            seed = run.get("seed", idx)
+            run_idx = run.get("run", idx)
+            recommendation_summary_file = os.path.join(
+                recommendation_log_dir,
+                f"{strategy}_run{run_idx}_seed{seed}_summary.csv",
+            )
+            recommendation_detail_file = os.path.join(
+                recommendation_log_dir,
+                f"{strategy}_run{run_idx}_seed{seed}_details.csv",
+            )
+            write_csv_rows(
+                recommendation_summary_file,
+                build_recommendation_summary_rows(recommendation_log),
+            )
+            write_csv_rows(
+                recommendation_detail_file,
+                build_recommendation_detail_rows(recommendation_log),
+            )
+            recommendation_log_paths.append(
+                os.path.relpath(recommendation_summary_file, run_output_dir)
+            )
+            recommendation_log_paths.append(
+                os.path.relpath(recommendation_detail_file, run_output_dir)
+            )
+
+    if recommendation_log_paths:
+        metadata["recommendation_log_files"] = recommendation_log_paths
+        with open(metadata_file, "w") as f:
+            json.dump(metadata, f, indent=2)
+
     try:
         from analysis import generate_full_report
 
@@ -474,6 +534,8 @@ def save_results(all_results, output_dir="results", config=None):
         print(f"Warning: automatic analysis generation failed: {e}")
 
     print(f"\nResults saved to: {run_output_dir}")
+    if recommendation_log_paths:
+        print(f"Recommendation logs saved to: {recommendation_log_dir}")
     return stats_results, run_output_dir
 
 

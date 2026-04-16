@@ -10,3 +10,11 @@ from .data_utils import (
     SimpleDataLoader,
 )
 from .trainer import Trainer, InBatchTrainer, MixedInBatchTrainer
+from .recommendation_logging import (
+    ItemMetadataLookup,
+    extract_test_user_items,
+    build_recommendation_log,
+    build_recommendation_summary_rows,
+    build_recommendation_detail_rows,
+    write_csv_rows,
+)
