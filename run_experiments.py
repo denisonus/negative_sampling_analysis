@@ -392,7 +392,7 @@ def save_results(all_results, output_dir="results", config=None):
     print("COMPARISON OF NEGATIVE SAMPLING STRATEGIES (summary statistics)")
     print("=" * 100)
 
-    metrics_to_show = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
+    metrics_to_show = ["ndcg@10", "recall@10", "recall@20", "mrr@10", "hit@10"]
     quality_metrics_to_show = [
         "item_coverage@10",
         "novelty@10",

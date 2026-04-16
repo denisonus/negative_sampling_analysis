@@ -9,6 +9,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 
+DEFAULT_RELEVANCE_METRICS = [
+    "ndcg@10",
+    "recall@10",
+    "recall@20",
+    "mrr@10",
+    "hit@10",
+]
+DEFAULT_METRIC_BY_K_BASES = ["ndcg", "recall", "mrr"]
+DEFAULT_SWEEP_METRICS = ["ndcg@10", "recall@10", "recall@20", "mrr@10"]
+DEFAULT_BUCKET_METRICS = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
+DEFAULT_QUALITY_METRICS = [
+    "item_coverage@10",
+    "novelty@10",
+    "tail_percentage@10",
+    "personalization@10",
+]
+SUMMARY_OPTIONAL_RELEVANCE_METRICS = ["precision@10", "map@10"]
+FEATURE_UPLIFT_METRICS = ["ndcg@10", "recall@10", "recall@20", "mrr@10"]
+
 
 def load_results(results_file):
     with open(results_file, "r") as f:
@@ -55,6 +74,27 @@ def _get_metric_value(strategy_stats, metric):
     return 0.0
 
 
+def _available_metrics(stats_data, candidates, section="metrics"):
+    """Keep only metrics that appear in at least one strategy."""
+    return [
+        metric
+        for metric in candidates
+        if any(metric in strategy_stats.get(section, {}) for strategy_stats in stats_data.values())
+    ]
+
+
+def _available_metric_ks(stats_data, metric_base, ks=(5, 10, 20)):
+    """Return Ks that exist for the requested metric family."""
+    return [
+        k
+        for k in ks
+        if any(
+            f"{metric_base}@{k}" in strategy_stats.get("metrics", {})
+            for strategy_stats in stats_data.values()
+        )
+    ]
+
+
 def _bucket_sort_key(bucket_label):
     order = {"0": 0, "1-5": 1, "6-20": 2, "21+": 3}
     return order.get(bucket_label, len(order))
@@ -65,6 +105,19 @@ def _collect_bucket_labels(stats_data):
     for strategy_stats in stats_data.values():
         labels.update(strategy_stats.get("bucket_metrics", {}).keys())
     return sorted(labels, key=_bucket_sort_key)
+
+
+def _available_bucket_metrics(stats_data, candidates):
+    """Keep only bucket metrics that appear in at least one bucket."""
+    return [
+        metric
+        for metric in candidates
+        if any(
+            metric in bucket_stats
+            for strategy_stats in stats_data.values()
+            for bucket_stats in strategy_stats.get("bucket_metrics", {}).values()
+        )
+    ]
 
 
 def _feature_aware_from_metadata(metadata):
@@ -187,6 +240,37 @@ def _infer_sweep_param(bundles, param=None):
     return candidate_params[0]
 
 
+def _collect_sweep_rows_from_bundles(bundles, strategies, metric="ndcg@10", param=None):
+    """Build simple per-bundle sweep rows for the requested strategies and metric."""
+    if not bundles:
+        return [], param, []
+
+    param = _infer_sweep_param(bundles, param=param)
+    context_keys = _infer_context_keys(bundles, primary_param=param)
+    rows = []
+    for bundle in bundles:
+        stats = bundle["results"].get("statistics", {})
+        param_value = bundle["config"].get(param)
+        feature_aware = bool(bundle["config"].get("feature_aware", False))
+        context = _format_context(bundle["config"], context_keys)
+        for strategy in strategies:
+            if strategy not in stats:
+                continue
+            rows.append(
+                {
+                    "param": param_value,
+                    "strategy": strategy,
+                    "feature_aware": feature_aware,
+                    "context": context,
+                    "metric_name": metric,
+                    "metric_value": _get_metric_value(stats[strategy], metric),
+                    "results_file": bundle["results_file"],
+                }
+            )
+
+    return rows, param, context_keys
+
+
 def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
     """Create bar chart comparing strategies on a specific metric."""
     stats_data = results["statistics"]
@@ -229,12 +313,18 @@ def plot_metric_comparison(results, metric="ndcg@10", output_path=None):
 
 def plot_all_metrics(
     results,
-    metrics=["ndcg@10", "recall@10", "hit@10", "mrr@10"],
+    metrics=None,
     output_path=None,
     title_suffix="",
 ):
     """Create grouped bar chart comparing all metrics with error bars."""
     stats_data = results["statistics"]
+    if metrics is None:
+        metrics = list(DEFAULT_RELEVANCE_METRICS)
+    metrics = _available_metrics(stats_data, metrics, section="metrics")
+    if not metrics:
+        return None
+
     strategies = _sorted_strategies(stats_data)
 
     n_strategies, n_metrics = len(strategies), len(metrics)
@@ -272,21 +362,80 @@ def plot_all_metrics(
 
     plt.tight_layout()
     _finalize_figure(fig, output_path)
+    return metrics
+
+
+def plot_metric_by_k(
+    results,
+    metric_bases=None,
+    ks=(5, 10, 20),
+    output_path=None,
+    title_suffix="",
+):
+    """Plot how key metrics evolve across the configured K cutoffs."""
+    stats_data = results["statistics"]
+    if metric_bases is None:
+        metric_bases = list(DEFAULT_METRIC_BY_K_BASES)
+
+    metric_ks = {
+        metric_base: _available_metric_ks(stats_data, metric_base, ks=ks)
+        for metric_base in metric_bases
+    }
+    metric_bases = [
+        metric_base for metric_base in metric_bases if metric_ks.get(metric_base)
+    ]
+    if not metric_bases:
+        return None
+
+    strategies = _sorted_strategies(stats_data)
+    fig, axes = plt.subplots(1, len(metric_bases), figsize=(5 * len(metric_bases), 5))
+    if len(metric_bases) == 1:
+        axes = [axes]
+    colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
+
+    for ax, metric_base in zip(axes, metric_bases):
+        available_ks = metric_ks[metric_base]
+        for color, strategy in zip(colors, strategies):
+            y_values = [
+                _get_metric_value(stats_data[strategy], f"{metric_base}@{k}")
+                for k in available_ks
+            ]
+            ax.plot(
+                available_ks,
+                y_values,
+                marker="o",
+                linewidth=2,
+                color=color,
+                label=strategy,
+            )
+
+        ax.set_title(metric_base.upper())
+        ax.set_xlabel("K")
+        ax.set_ylabel("Metric value")
+        ax.set_xticks(available_ks)
+        ax.grid(True, alpha=0.3)
+
+    axes[0].legend(loc="best")
+    fig.suptitle(f"Metric Behavior Across K{title_suffix}")
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+    return metric_bases
 
 
 def plot_quality_metrics(
     results,
-    metrics=[
-        "item_coverage@10",
-        "novelty@10",
-        "tail_percentage@10",
-        "personalization@10",
-    ],
+    metrics=None,
     output_path=None,
     title_suffix="",
 ):
     """Create grouped bar chart for recommendation-quality metrics."""
     stats_data = results["statistics"]
+    if metrics is None:
+        metrics = list(DEFAULT_QUALITY_METRICS)
+    metrics = _available_metrics(stats_data, metrics, section="quality_metrics")
+    if not metrics:
+        return None
+
     strategies = _sorted_strategies(stats_data)
 
     n_strategies, n_metrics = len(strategies), len(metrics)
@@ -571,7 +720,7 @@ def save_user_bucket_metrics_table(results, output_path):
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
     bucket_labels = _collect_bucket_labels(stats_data)
-    metrics = ["ndcg@10", "recall@10", "hit@10"]
+    metrics = _available_bucket_metrics(stats_data, DEFAULT_BUCKET_METRICS)
 
     rows = []
     for strategy in strategies:
@@ -607,19 +756,22 @@ def save_user_bucket_metrics_table(results, output_path):
 
 
 def plot_user_bucket_metrics(results, output_path=None, title_suffix=""):
-    """Plot grouped bucket metrics for NDCG, Recall, and Hit at 10."""
+    """Plot grouped bucket metrics for the main @10 user-activity metrics."""
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
     bucket_labels = _collect_bucket_labels(stats_data)
     if not bucket_labels:
         return None
 
-    metrics = ["ndcg@10", "recall@10", "hit@10"]
+    metrics = _available_bucket_metrics(stats_data, DEFAULT_BUCKET_METRICS)
+    if not metrics:
+        return None
     colors = plt.colormaps["Set2"](np.linspace(0, 1, len(bucket_labels)))
-    fig, axes = plt.subplots(1, len(metrics), figsize=(18, 5), sharex=True)
-
-    if len(metrics) == 1:
-        axes = [axes]
+    if len(metrics) <= 3:
+        fig, axes = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 5), sharex=True)
+    else:
+        fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharex=True)
+    axes = np.atleast_1d(axes).flatten()
 
     x = np.arange(len(strategies))
     width = 0.8 / max(len(bucket_labels), 1)
@@ -658,12 +810,15 @@ def plot_user_bucket_metrics(results, output_path=None, title_suffix=""):
         ax.set_xticklabels(strategies, rotation=45, ha="right")
         ax.grid(True, axis="y", alpha=0.2)
 
+    for ax in axes[len(metrics):]:
+        ax.axis("off")
+
     axes[0].set_ylabel("Metric Value")
     fig.suptitle(f"Per-User Activity Bucket Metrics{title_suffix}")
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, title="Train interactions", loc="upper center", ncol=len(bucket_labels))
-    plt.tight_layout(rect=(0, 0, 1, 0.9))
+    plt.tight_layout(rect=(0, 0, 1, 0.92))
     _finalize_figure(fig, output_path)
     return bucket_labels
 
@@ -951,11 +1106,17 @@ def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
     """Create a compact dashboard with thesis-critical comparisons."""
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
+    if not strategies:
+        return None
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
 
     # Relevance overview
-    relevance_metrics = ["ndcg@10", "recall@10", "mrr@10", "hit@10"]
+    relevance_metrics = _available_metrics(
+        stats_data, DEFAULT_RELEVANCE_METRICS, section="metrics"
+    )
+    if not relevance_metrics:
+        return None
     x = np.arange(len(strategies))
     width = 0.8 / len(relevance_metrics)
     colors = plt.colormaps["Set2"](np.linspace(0, 1, len(relevance_metrics)))
@@ -980,9 +1141,7 @@ def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
     total_times = [
         stats_data[s]["timing"]["total_time"]["mean"] for s in strategies
     ]
-    ndcg_values = [
-        stats_data[s]["metrics"]["ndcg@10"]["mean"] for s in strategies
-    ]
+    ndcg_values = [_get_metric_value(stats_data[s], "ndcg@10") for s in strategies]
     axes[0, 1].scatter(total_times, ndcg_values, color="steelblue", edgecolor="black")
     for strategy, total_time, ndcg_value in zip(strategies, total_times, ndcg_values):
         axes[0, 1].text(
@@ -1148,37 +1307,39 @@ def save_summary_table(results, output_path, metadata=None):
     strategies = _sorted_strategies(stats_data)
     rows = []
     feature_aware = _feature_aware_from_metadata(metadata)
+    relevance_metrics = _available_metrics(
+        stats_data,
+        [
+            "ndcg@10",
+            "recall@10",
+            "recall@20",
+            "mrr@10",
+            "hit@10",
+            *SUMMARY_OPTIONAL_RELEVANCE_METRICS,
+        ],
+        section="metrics",
+    )
+    quality_metrics = _available_metrics(
+        stats_data,
+        ["item_coverage@10", "novelty@10", "tail_percentage@10", "personalization@10"],
+        section="quality_metrics",
+    )
 
     for strategy in strategies:
         strategy_stats = stats_data[strategy]
         total_time = strategy_stats["timing"]["total_time"]["mean"]
         sampling_time = strategy_stats["timing"]["sampling_time"]["mean"]
-        rows.append(
-            {
-                "strategy": strategy,
-                "ndcg@10": strategy_stats["metrics"].get("ndcg@10", {}).get("mean", 0),
-                "recall@10": strategy_stats["metrics"].get("recall@10", {}).get("mean", 0),
-                "mrr@10": strategy_stats["metrics"].get("mrr@10", {}).get("mean", 0),
-                "hit@10": strategy_stats["metrics"].get("hit@10", {}).get("mean", 0),
-                "item_coverage@10": strategy_stats.get("quality_metrics", {})
-                .get("item_coverage@10", {})
-                .get("mean", 0),
-                "novelty@10": strategy_stats.get("quality_metrics", {})
-                .get("novelty@10", {})
-                .get("mean", 0),
-                "tail_percentage@10": strategy_stats.get("quality_metrics", {})
-                .get("tail_percentage@10", {})
-                .get("mean", 0),
-                "personalization@10": strategy_stats.get("quality_metrics", {})
-                .get("personalization@10", {})
-                .get("mean", 0),
-                "total_time": total_time,
-                "sampling_time": sampling_time,
-                "training_time": strategy_stats["timing"]["training_time"]["mean"],
-                "sampling_share": (sampling_time / total_time) if total_time > 0 else 0.0,
-                "feature_aware": feature_aware,
-            }
-        )
+        row = {"strategy": strategy}
+        for metric in relevance_metrics:
+            row[metric] = _get_metric_value(strategy_stats, metric)
+        for metric in quality_metrics:
+            row[metric] = _get_metric_value(strategy_stats, metric)
+        row["total_time"] = total_time
+        row["sampling_time"] = sampling_time
+        row["training_time"] = strategy_stats["timing"]["training_time"]["mean"]
+        row["sampling_share"] = (sampling_time / total_time) if total_time > 0 else 0.0
+        row["feature_aware"] = feature_aware
+        rows.append(row)
 
     if not rows:
         return
@@ -1211,21 +1372,25 @@ def save_competitive_summary(
 
     rows = []
     feature_aware = _feature_aware_from_metadata(metadata)
+    relevance_metrics = [
+        metric
+        for metric in ["recall@10", "recall@20", "mrr@10", "hit@10"]
+        if _available_metrics(stats_data, [metric], section="metrics")
+    ]
     for strategy in strategies:
         strategy_stats = stats_data[strategy]
-        rows.append(
-            {
-                "strategy": strategy,
-                primary_metric: _get_metric_value(strategy_stats, primary_metric),
-                "recall@10": _get_metric_value(strategy_stats, "recall@10"),
-                "mrr@10": _get_metric_value(strategy_stats, "mrr@10"),
-                "item_coverage@10": _get_metric_value(strategy_stats, "item_coverage@10"),
-                "novelty@10": _get_metric_value(strategy_stats, "novelty@10"),
-                "personalization@10": _get_metric_value(strategy_stats, "personalization@10"),
-                "total_time": _get_metric_value(strategy_stats, "total_time"),
-                "feature_aware": feature_aware,
-            }
-        )
+        row = {
+            "strategy": strategy,
+            primary_metric: _get_metric_value(strategy_stats, primary_metric),
+        }
+        for metric in relevance_metrics:
+            row[metric] = _get_metric_value(strategy_stats, metric)
+        row["item_coverage@10"] = _get_metric_value(strategy_stats, "item_coverage@10")
+        row["novelty@10"] = _get_metric_value(strategy_stats, "novelty@10")
+        row["personalization@10"] = _get_metric_value(strategy_stats, "personalization@10")
+        row["total_time"] = _get_metric_value(strategy_stats, "total_time")
+        row["feature_aware"] = feature_aware
+        rows.append(row)
 
     if not rows:
         return []
@@ -1272,27 +1437,9 @@ def plot_parameter_sweep(
 ):
     """Plot a sampler knob sweep across multiple finished runs."""
     bundles = _load_sweep_bundles(results_files)
-    if not bundles:
-        return None
-
-    param = _infer_sweep_param(bundles, param=param)
-    context_keys = _infer_context_keys(bundles, primary_param=param)
-
-    rows = []
-    for bundle in bundles:
-        stats = bundle["results"].get("statistics", {})
-        if strategy not in stats:
-            continue
-        strategy_stats = stats[strategy]
-        rows.append(
-            {
-                "param": bundle["config"].get(param),
-                "feature_aware": bool(bundle["config"].get("feature_aware", False)),
-                "context": _format_context(bundle["config"], context_keys),
-                "metric": _get_metric_value(strategy_stats, metric),
-                "results_file": bundle["results_file"],
-            }
-        )
+    rows, param, _ = _collect_sweep_rows_from_bundles(
+        bundles, [strategy], metric=metric, param=param
+    )
 
     if not rows:
         raise ValueError(f"Strategy '{strategy}' not found in provided result files.")
@@ -1323,7 +1470,7 @@ def plot_parameter_sweep(
         for color, (group_key, group_rows) in zip(colors, grouped_rows.items()):
             group_rows.sort(key=lambda row: _sort_param_value(row["param"]))
             xs = [value_to_pos[row["param"]] for row in group_rows]
-            ys = [row["metric"] for row in group_rows]
+            ys = [row["metric_value"] for row in group_rows]
             label = _line_label(
                 feature_aware=group_key[0] if has_feature_split else None,
                 context=group_key[1] if has_context_split else "",
@@ -1341,14 +1488,14 @@ def plot_parameter_sweep(
                 )
         ax.legend(loc="best")
     else:
-        y_values = [row["metric"] for row in rows]
+        y_values = [row["metric_value"] for row in rows]
         row_positions = [value_to_pos[row["param"]] for row in rows]
         ax.plot(row_positions, y_values, marker="o", color="steelblue", linewidth=2)
         for x_position, row in zip(row_positions, rows):
             ax.text(
                 x_position,
-                row["metric"],
-                f"{row['metric']:.3f}",
+                row["metric_value"],
+                f"{row['metric_value']:.3f}",
                 fontsize=8,
                 ha="center",
                 va="bottom",
@@ -1383,30 +1530,9 @@ def plot_multi_strategy_sweep(
 ):
     """Overlay multiple strategies on the same parameter sweep."""
     bundles = _load_sweep_bundles(results_files)
-    if not bundles:
-        return None
-
-    param = _infer_sweep_param(bundles, param=param)
-    context_keys = _infer_context_keys(bundles, primary_param=param)
-    rows = []
-    for bundle in bundles:
-        stats = bundle["results"].get("statistics", {})
-        param_value = bundle["config"].get(param)
-        feature_aware = bool(bundle["config"].get("feature_aware", False))
-        context = _format_context(bundle["config"], context_keys)
-        for strategy in strategies:
-            if strategy not in stats:
-                continue
-            rows.append(
-                {
-                    "param": param_value,
-                    "strategy": strategy,
-                    "feature_aware": feature_aware,
-                    "context": context,
-                    "metric": _get_metric_value(stats[strategy], metric),
-                    "results_file": bundle["results_file"],
-                }
-            )
+    rows, param, _ = _collect_sweep_rows_from_bundles(
+        bundles, strategies, metric=metric, param=param
+    )
 
     if not rows:
         raise ValueError("None of the requested strategies were found in the provided results.")
@@ -1443,7 +1569,7 @@ def plot_multi_strategy_sweep(
         for group_key, group_rows in grouped_rows.items():
             group_rows.sort(key=lambda row: _sort_param_value(row["param"]))
             xs = [value_to_pos[row["param"]] for row in group_rows]
-            ys = [row["metric"] for row in group_rows]
+            ys = [row["metric_value"] for row in group_rows]
             line_style = "--" if group_key[0] else "-"
             label = _line_label(
                 strategy=strategy,
@@ -1491,6 +1617,127 @@ def plot_multi_strategy_sweep(
     return csv_rows
 
 
+def plot_multi_metric_sweep(
+    results_files,
+    strategies,
+    metrics=None,
+    param=None,
+    output_path=None,
+    csv_path=None,
+):
+    """Create a compact multi-panel sweep view for the main report metrics."""
+    bundles = _load_sweep_bundles(results_files)
+    if metrics is None:
+        metrics = list(DEFAULT_SWEEP_METRICS)
+
+    param = _infer_sweep_param(bundles, param=param)
+    context_keys = _infer_context_keys(bundles, primary_param=param)
+    rows_by_metric = {}
+    for metric in metrics:
+        rows, _, _ = _collect_sweep_rows_from_bundles(
+            bundles, strategies, metric=metric, param=param
+        )
+        if rows:
+            rows_by_metric[metric] = rows
+
+    if not rows_by_metric:
+        return None
+
+    param_values = sorted(
+        {
+            row["param"]
+            for metric_rows in rows_by_metric.values()
+            for row in metric_rows
+        },
+        key=_sort_param_value,
+    )
+    x_positions = np.arange(len(param_values))
+    x_labels = [str(value) for value in param_values]
+    value_to_pos = {value: idx for idx, value in enumerate(param_values)}
+
+    metric_names = list(rows_by_metric.keys())
+    fig, axes = plt.subplots(1, len(metric_names), figsize=(6 * len(metric_names), 5))
+    if len(metric_names) == 1:
+        axes = [axes]
+
+    colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
+    csv_rows = []
+
+    for ax, metric in zip(axes, metric_names):
+        rows = rows_by_metric[metric]
+        feature_states = sorted({row["feature_aware"] for row in rows})
+        has_feature_split = param != "feature_aware" and len(feature_states) > 1
+        has_context_split = any(row["context"] for row in rows)
+
+        for color, strategy in zip(colors, strategies):
+            strategy_rows = [row for row in rows if row["strategy"] == strategy]
+            if not strategy_rows:
+                continue
+
+            grouped_rows = {}
+            if has_feature_split or has_context_split:
+                for row in strategy_rows:
+                    group_key = (
+                        row["feature_aware"] if has_feature_split else None,
+                        row["context"] if has_context_split else "",
+                    )
+                    grouped_rows.setdefault(group_key, []).append(row)
+            else:
+                grouped_rows[(None, "")] = strategy_rows
+
+            for group_key, group_rows in grouped_rows.items():
+                group_rows.sort(key=lambda row: _sort_param_value(row["param"]))
+                xs = [value_to_pos[row["param"]] for row in group_rows]
+                ys = [row["metric_value"] for row in group_rows]
+                line_style = "--" if group_key[0] else "-"
+                label = _line_label(
+                    strategy=strategy,
+                    feature_aware=group_key[0] if has_feature_split else None,
+                    context=group_key[1] if has_context_split else "",
+                )
+                ax.plot(
+                    xs,
+                    ys,
+                    marker="o",
+                    linewidth=2,
+                    color=color,
+                    linestyle=line_style,
+                    label=label,
+                )
+                for x_value, y_value in zip(xs, ys):
+                    ax.text(
+                        x_value,
+                        y_value,
+                        f"{y_value:.3f}",
+                        fontsize=8,
+                        ha="center",
+                        va="bottom",
+                        color=color,
+                    )
+
+            csv_rows.extend(strategy_rows)
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(x_labels, rotation=45, ha="right")
+        ax.set_xlabel(str(param) if param is not None else "parameter")
+        ax.set_ylabel(metric)
+        ax.set_title(metric)
+        ax.grid(True, alpha=0.3)
+
+    axes[0].legend(loc="best")
+    fig.suptitle("Core Metric Sweep Overview")
+    plt.tight_layout()
+    _finalize_figure(fig, output_path)
+
+    if csv_path:
+        with open(csv_path, "w", newline="") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=list(csv_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(csv_rows)
+
+    return csv_rows
+
+
 def build_feature_uplift_rows(results_files, strategies=None, param=None):
     """Build paired id-only vs feature-aware comparison rows."""
     bundles = _load_sweep_bundles(results_files)
@@ -1511,23 +1758,21 @@ def build_feature_uplift_rows(results_files, strategies=None, param=None):
             if strategy not in stats:
                 continue
             strategy_stats = stats[strategy]
-            base_rows.append(
-                {
-                    "strategy": strategy,
-                    "sweep_param": param,
-                    "sweep_value": param_value,
-                    "context": context,
-                    "feature_aware": feature_aware,
-                    "ndcg@10": _get_metric_value(strategy_stats, "ndcg@10"),
-                    "recall@10": _get_metric_value(strategy_stats, "recall@10"),
-                    "item_coverage@10": _get_metric_value(
-                        strategy_stats, "item_coverage@10"
-                    ),
-                    "novelty@10": _get_metric_value(strategy_stats, "novelty@10"),
-                    "total_time": _get_metric_value(strategy_stats, "total_time"),
-                    "results_file": bundle["results_file"],
-                }
-            )
+            row = {
+                "strategy": strategy,
+                "sweep_param": param,
+                "sweep_value": param_value,
+                "context": context,
+                "feature_aware": feature_aware,
+                "results_file": bundle["results_file"],
+            }
+            for metric in FEATURE_UPLIFT_METRICS:
+                if metric in strategy_stats.get("metrics", {}):
+                    row[metric] = _get_metric_value(strategy_stats, metric)
+            row["item_coverage@10"] = _get_metric_value(strategy_stats, "item_coverage@10")
+            row["novelty@10"] = _get_metric_value(strategy_stats, "novelty@10")
+            row["total_time"] = _get_metric_value(strategy_stats, "total_time")
+            base_rows.append(row)
 
     if not base_rows:
         return None, param
@@ -1556,12 +1801,6 @@ def build_feature_uplift_rows(results_files, strategies=None, param=None):
                 "sweep_param": param,
                 "sweep_value": sweep_value,
                 "context": context,
-                "id_ndcg@10": id_row["ndcg@10"],
-                "feature_ndcg@10": feature_row["ndcg@10"],
-                "delta_ndcg@10": feature_row["ndcg@10"] - id_row["ndcg@10"],
-                "id_recall@10": id_row["recall@10"],
-                "feature_recall@10": feature_row["recall@10"],
-                "delta_recall@10": feature_row["recall@10"] - id_row["recall@10"],
                 "id_item_coverage@10": id_row["item_coverage@10"],
                 "feature_item_coverage@10": feature_row["item_coverage@10"],
                 "delta_item_coverage@10": feature_row["item_coverage@10"]
@@ -1574,6 +1813,12 @@ def build_feature_uplift_rows(results_files, strategies=None, param=None):
                 "delta_total_time": feature_row["total_time"] - id_row["total_time"],
             }
         )
+        for metric in FEATURE_UPLIFT_METRICS:
+            if metric not in id_row or metric not in feature_row:
+                continue
+            uplift_rows[-1][f"id_{metric}"] = id_row[metric]
+            uplift_rows[-1][f"feature_{metric}"] = feature_row[metric]
+            uplift_rows[-1][f"delta_{metric}"] = feature_row[metric] - id_row[metric]
 
     if not uplift_rows:
         return None, param
@@ -1612,26 +1857,37 @@ def _feature_uplift_label(row):
 
 
 def plot_feature_uplift(results_files, output_path, strategies=None, param=None):
-    """Plot NDCG and Recall uplift from enabling feature-aware mode."""
+    """Plot feature-aware uplift across the core relevance metrics."""
     rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
     if not rows:
         return None
 
     labels = [_feature_uplift_label(row) for row in rows]
     x = np.arange(len(rows))
-    width = 0.38
+    delta_metrics = [
+        metric
+        for metric in [
+            "delta_ndcg@10",
+            "delta_recall@10",
+            "delta_recall@20",
+            "delta_mrr@10",
+        ]
+        if any(metric in row for row in rows)
+    ]
+    width = 0.8 / max(len(delta_metrics), 1)
 
     fig, ax = plt.subplots(figsize=(max(9, len(rows) * 1.4), 6))
-    ndcg_deltas = [row["delta_ndcg@10"] for row in rows]
-    recall_deltas = [row["delta_recall@10"] for row in rows]
-    ax.bar(x - width / 2, ndcg_deltas, width, label="delta_ndcg@10", color="steelblue")
-    ax.bar(
-        x + width / 2,
-        recall_deltas,
-        width,
-        label="delta_recall@10",
-        color="darkorange",
-    )
+    colors = plt.colormaps["Set2"](np.linspace(0, 1, len(delta_metrics)))
+    for idx, metric in enumerate(delta_metrics):
+        values = [row[metric] for row in rows]
+        offset = (idx - len(delta_metrics) / 2 + 0.5) * width
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=metric,
+            color=colors[idx],
+        )
     ax.axhline(0.0, color="black", linewidth=1)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right")
@@ -1801,6 +2057,11 @@ def generate_full_report(results_file, output_dir=None):
         output_path=os.path.join(output_dir, "relevance_metrics.png"),
         title_suffix=title_suffix,
     )
+    plot_metric_by_k(
+        results,
+        output_path=os.path.join(output_dir, "metric_by_k.png"),
+        title_suffix=title_suffix,
+    )
     has_quality_metrics = any(
         stats_data.get("quality_metrics") for stats_data in results["statistics"].values()
     )
@@ -1917,6 +2178,14 @@ if __name__ == "__main__":
                 output_path=os.path.join(output_dir, "parameter_sweep_multi.png"),
                 csv_path=os.path.join(output_dir, "parameter_sweep_multi.csv"),
             )
+            plot_multi_metric_sweep(
+                args.results_files,
+                strategies=args.sweep_strategies,
+                metrics=DEFAULT_SWEEP_METRICS,
+                param=args.sweep_param,
+                output_path=os.path.join(output_dir, "parameter_sweep_core_metrics.png"),
+                csv_path=os.path.join(output_dir, "parameter_sweep_core_metrics.csv"),
+            )
             save_feature_uplift_table(
                 args.results_files,
                 os.path.join(output_dir, "feature_uplift.csv"),
@@ -1943,6 +2212,14 @@ if __name__ == "__main__":
                 param=args.sweep_param,
                 output_path=os.path.join(output_dir, "parameter_sweep.png"),
                 csv_path=os.path.join(output_dir, "parameter_sweep.csv"),
+            )
+            plot_multi_metric_sweep(
+                args.results_files,
+                strategies=[args.sweep_strategy],
+                metrics=DEFAULT_SWEEP_METRICS,
+                param=args.sweep_param,
+                output_path=os.path.join(output_dir, "parameter_sweep_core_metrics.png"),
+                csv_path=os.path.join(output_dir, "parameter_sweep_core_metrics.csv"),
             )
             save_feature_uplift_table(
                 args.results_files,

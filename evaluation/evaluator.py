@@ -216,7 +216,7 @@ class Evaluator:
         self,
         rankings,
         user_train_counts,
-        metrics=("ndcg", "recall", "hit"),
+        metrics=("ndcg", "recall", "hit", "mrr"),
         target_k=10,
     ):
         """Aggregate selected metrics by user activity bucket."""

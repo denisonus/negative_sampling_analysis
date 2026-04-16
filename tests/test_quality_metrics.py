@@ -7,8 +7,12 @@ import numpy as np
 import torch
 
 from analysis import (
+    plot_metric_by_k,
+    plot_multi_metric_sweep,
     plot_user_bucket_delta_heatmap,
     plot_user_bucket_metrics,
+    save_competitive_summary,
+    save_summary_table,
     save_user_bucket_metrics_table,
 )
 from evaluation.evaluator import Evaluator
@@ -82,7 +86,9 @@ class QualityMetricsTests(unittest.TestCase):
         self.assertEqual(rankings["topk_items"].shape, (2, 2))
 
     def test_user_bucket_metrics_match_expected_values(self):
-        evaluator = Evaluator(num_items=20, metrics=["Recall", "NDCG", "Hit"], topk=[10])
+        evaluator = Evaluator(
+            num_items=20, metrics=["Recall", "NDCG", "Hit", "MRR"], topk=[10]
+        )
         rankings = {
             "user_ids": np.array([10, 11, 12, 13], dtype=np.int64),
             "topk_items": np.zeros((4, 10), dtype=np.int64),
@@ -107,11 +113,15 @@ class QualityMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(bucket_metrics["0"]["ndcg@10"], 1.0 / np.log2(4))
         self.assertAlmostEqual(bucket_metrics["0"]["recall@10"], 1.0)
         self.assertAlmostEqual(bucket_metrics["0"]["hit@10"], 1.0)
+        self.assertAlmostEqual(bucket_metrics["0"]["mrr@10"], 1.0 / 3.0)
         self.assertAlmostEqual(bucket_metrics["1-5"]["ndcg@10"], 1.0)
+        self.assertAlmostEqual(bucket_metrics["1-5"]["mrr@10"], 1.0)
         self.assertAlmostEqual(bucket_metrics["6-20"]["ndcg@10"], 1.0 / np.log2(3))
+        self.assertAlmostEqual(bucket_metrics["6-20"]["mrr@10"], 0.5)
         self.assertAlmostEqual(bucket_metrics["21+"]["ndcg@10"], 0.0)
         self.assertAlmostEqual(bucket_metrics["21+"]["recall@10"], 0.0)
         self.assertAlmostEqual(bucket_metrics["21+"]["hit@10"], 0.0)
+        self.assertAlmostEqual(bucket_metrics["21+"]["mrr@10"], 0.0)
 
     def test_quality_metrics_are_aggregated_and_saved(self):
         all_results = {
@@ -240,6 +250,13 @@ class QualityMetricsTests(unittest.TestCase):
                                 "ci_upper": 0.36,
                                 "values": [0.35, 0.35],
                             },
+                            "mrr@10": {
+                                "mean": 0.45,
+                                "std": 0.01,
+                                "ci_lower": 0.44,
+                                "ci_upper": 0.46,
+                                "values": [0.45, 0.45],
+                            },
                         },
                         "6-20": {
                             "ndcg@10": {
@@ -263,6 +280,13 @@ class QualityMetricsTests(unittest.TestCase):
                                 "ci_upper": 0.40,
                                 "values": [0.38, 0.38],
                             },
+                            "mrr@10": {
+                                "mean": 0.48,
+                                "std": 0.02,
+                                "ci_lower": 0.46,
+                                "ci_upper": 0.50,
+                                "values": [0.48, 0.48],
+                            },
                         },
                     },
                 }
@@ -284,10 +308,135 @@ class QualityMetricsTests(unittest.TestCase):
 
             self.assertTrue(rows)
             self.assertEqual(plotted_buckets, ["1-5", "6-20"])
+            self.assertTrue(any(row["metric"] == "mrr@10" for row in rows))
             self.assertIsNone(heatmap)
             self.assertTrue(csv_path.exists())
             self.assertTrue(plot_path.exists())
             self.assertFalse(heatmap_path.exists())
+
+    def test_summary_and_metric_by_k_outputs_include_recall20(self):
+        results = {
+            "statistics": {
+                "uniform": {
+                    "metrics": {
+                        "ndcg@5": {"mean": 0.10},
+                        "ndcg@10": {"mean": 0.12},
+                        "ndcg@20": {"mean": 0.14},
+                        "recall@5": {"mean": 0.20},
+                        "recall@10": {"mean": 0.25},
+                        "recall@20": {"mean": 0.30},
+                        "mrr@5": {"mean": 0.30},
+                        "mrr@10": {"mean": 0.32},
+                        "mrr@20": {"mean": 0.33},
+                        "hit@10": {"mean": 0.40},
+                        "precision@10": {"mean": 0.08},
+                        "map@10": {"mean": 0.09},
+                    },
+                    "quality_metrics": {
+                        "item_coverage@10": {"mean": 0.5},
+                        "novelty@10": {"mean": 1.2},
+                        "tail_percentage@10": {"mean": 0.1},
+                        "personalization@10": {"mean": 0.8},
+                    },
+                    "timing": {
+                        "total_time": {"mean": 1.0},
+                        "sampling_time": {"mean": 0.2},
+                        "training_time": {"mean": 0.8},
+                    },
+                },
+                "hard": {
+                    "metrics": {
+                        "ndcg@5": {"mean": 0.11},
+                        "ndcg@10": {"mean": 0.13},
+                        "ndcg@20": {"mean": 0.15},
+                        "recall@5": {"mean": 0.21},
+                        "recall@10": {"mean": 0.27},
+                        "recall@20": {"mean": 0.31},
+                        "mrr@5": {"mean": 0.29},
+                        "mrr@10": {"mean": 0.31},
+                        "mrr@20": {"mean": 0.32},
+                        "hit@10": {"mean": 0.41},
+                        "precision@10": {"mean": 0.07},
+                        "map@10": {"mean": 0.10},
+                    },
+                    "quality_metrics": {
+                        "item_coverage@10": {"mean": 0.6},
+                        "novelty@10": {"mean": 1.1},
+                        "tail_percentage@10": {"mean": 0.2},
+                        "personalization@10": {"mean": 0.7},
+                    },
+                    "timing": {
+                        "total_time": {"mean": 2.0},
+                        "sampling_time": {"mean": 0.5},
+                        "training_time": {"mean": 1.5},
+                    },
+                },
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary_path = Path(tmpdir) / "summary_metrics.csv"
+            competitive_path = Path(tmpdir) / "competitive_summary.csv"
+            metric_by_k_path = Path(tmpdir) / "metric_by_k.png"
+
+            save_summary_table(results, summary_path, metadata={"config": {"feature_aware": False}})
+            rows = save_competitive_summary(results, competitive_path)
+            plotted = plot_metric_by_k(results, output_path=metric_by_k_path)
+
+            header = summary_path.read_text().splitlines()[0].split(",")
+            self.assertIn("recall@20", header)
+            self.assertIn("precision@10", header)
+            self.assertIn("map@10", header)
+            self.assertTrue(rows)
+            self.assertIn("recall@20", rows[0])
+            self.assertEqual(plotted, ["ndcg", "recall", "mrr"])
+            self.assertTrue(metric_by_k_path.exists())
+
+    def test_multi_metric_sweep_outputs_are_created(self):
+        bundle_results = {
+            "statistics": {
+                "uniform": {
+                    "metrics": {
+                        "ndcg@10": {"mean": 0.10},
+                        "recall@10": {"mean": 0.20},
+                        "recall@20": {"mean": 0.30},
+                        "mrr@10": {"mean": 0.40},
+                    }
+                }
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_files = []
+            for idx, num_neg in enumerate([1, 4], start=1):
+                run_dir = Path(tmpdir) / f"run_{idx}"
+                run_dir.mkdir()
+                (run_dir / "results.json").write_text(json.dumps(bundle_results))
+                metadata = {
+                    "config": {
+                        "num_neg_samples": num_neg,
+                        "topk": [5, 10, 20],
+                        "valid_metric": "NDCG@10",
+                    }
+                }
+                (run_dir / "metadata.json").write_text(json.dumps(metadata))
+                results_files.append(str(run_dir / "results.json"))
+
+            plot_path = Path(tmpdir) / "parameter_sweep_core_metrics.png"
+            csv_path = Path(tmpdir) / "parameter_sweep_core_metrics.csv"
+            rows = plot_multi_metric_sweep(
+                results_files,
+                strategies=["uniform"],
+                output_path=plot_path,
+                csv_path=csv_path,
+            )
+
+            self.assertTrue(rows)
+            self.assertTrue(plot_path.exists())
+            self.assertTrue(csv_path.exists())
+            csv_text = csv_path.read_text()
+            self.assertIn("metric_name", csv_text)
+            self.assertIn("recall@20", csv_text)
 
 
 if __name__ == "__main__":
