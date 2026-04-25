@@ -6,7 +6,7 @@ It includes:
 - a two-tower model in `models/two_tower.py`
 - multiple negative samplers in `samplers/`
 - experiment runner in `run_experiments.py`
-- result plots in `analysis.py`
+- result analysis facade in `analysis.py` with implementation in `_analysis/`
 
 Supported strategies:
 - `uniform`
@@ -28,5 +28,6 @@ samplers/            Negative sampling strategies
 utils/               Data loading and training code
 evaluation/          Ranking metrics
 run_experiments.py   Main entry point
-analysis.py          Plotting and comparison
+analysis.py          Analysis facade and CLI
+_analysis/           Plot, table, sweep, and report implementation
 ```
