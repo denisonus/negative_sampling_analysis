@@ -12,7 +12,6 @@ from .data_utils import (
 )
 from .trainer import Trainer, InBatchTrainer, MixedInBatchTrainer
 from .recommendation_logging import (
-    ItemMetadataLookup,
     extract_test_user_items,
     build_recommendation_log,
     build_recommendation_summary_rows,

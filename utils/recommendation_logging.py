@@ -1,7 +1,6 @@
-"""Recommendation logging utilities with human-readable item metadata."""
+"""Lightweight, dataset-agnostic recommendation logging utilities."""
 
 import csv
-import os
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -9,10 +8,6 @@ import torch
 
 DEFAULT_RECOMMENDATION_LOG_USERS = 10
 DEFAULT_RECOMMENDATION_LOG_TOPK = 10
-
-
-def _normalize_field_name(name: str) -> str:
-    return str(name).split(":", 1)[0]
 
 
 def _to_python_scalar(value: Any) -> Any:
@@ -40,294 +35,6 @@ def _to_sequence(values: Any) -> list:
     return [values]
 
 
-def _stringify(value: Any) -> Optional[str]:
-    value = _to_python_scalar(value)
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        return value.decode("utf-8")
-    return str(value)
-
-
-def _sequence_to_text(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        text = value.strip()
-        return text or None
-    if isinstance(value, bytes):
-        text = value.decode("utf-8").strip()
-        return text or None
-
-    tokens = []
-    for token in _to_sequence(value):
-        text = _stringify(token)
-        if text is None or text in {"", "0", "[PAD]"}:
-            continue
-        tokens.append(text)
-
-    if not tokens:
-        return None
-    return " ".join(tokens)
-
-
-def _genres_from_value(value: Any) -> list[str]:
-    text = _sequence_to_text(value)
-    if text is None:
-        return []
-    return [genre for genre in text.split() if genre]
-
-
-def _values_from_column(column: Any) -> list:
-    if column is None:
-        return []
-    if isinstance(column, torch.Tensor):
-        return column.detach().cpu().tolist()
-    if isinstance(column, np.ndarray):
-        return column.tolist()
-    if hasattr(column, "tolist"):
-        values = column.tolist()
-        if isinstance(values, list):
-            return values
-        return [values]
-    return list(column)
-
-
-def _maybe_get_column(table: Any, field_name: str) -> Optional[list]:
-    if table is None:
-        return None
-
-    columns = getattr(table, "columns", None)
-    if columns is None or field_name not in columns:
-        return None
-
-    return _values_from_column(table[field_name])
-
-
-def _read_item_metadata_file(item_file: str) -> Dict[str, Dict[str, Any]]:
-    if not os.path.exists(item_file):
-        return {}
-
-    with open(item_file, "r", encoding="utf-8", newline="") as file_obj:
-        reader = csv.DictReader(file_obj, delimiter="\t")
-        if not reader.fieldnames:
-            return {}
-
-        normalized_fields = {
-            field_name: _normalize_field_name(field_name)
-            for field_name in reader.fieldnames
-        }
-        item_field = next(
-            (
-                field_name
-                for field_name, normalized in normalized_fields.items()
-                if normalized == "item_id"
-            ),
-            reader.fieldnames[0],
-        )
-        title_field = next(
-            (
-                field_name
-                for field_name, normalized in normalized_fields.items()
-                if normalized in {"movie_title", "title"}
-            ),
-            None,
-        )
-        genre_field = next(
-            (
-                field_name
-                for field_name, normalized in normalized_fields.items()
-                if normalized in {"genre", "genres"}
-            ),
-            None,
-        )
-
-        metadata = {}
-        source_name = os.path.basename(item_file)
-        for row in reader:
-            raw_item_id = row.get(item_field)
-            if raw_item_id is None:
-                continue
-
-            metadata[str(raw_item_id)] = {
-                "raw_item_id": str(raw_item_id),
-                "title": _sequence_to_text(row.get(title_field)),
-                "genres": _genres_from_value(row.get(genre_field)),
-                "metadata_source": source_name,
-            }
-
-    return metadata
-
-
-def _item_file_path(data_path: str, dataset_name: Optional[str]) -> Optional[str]:
-    if not dataset_name:
-        return None
-    return os.path.join(data_path, dataset_name, f"{dataset_name}.item")
-
-
-def _extract_internal_item_tokens(dataset: Any) -> Optional[list[str]]:
-    iid_field = getattr(dataset, "iid_field", None)
-    if iid_field is None:
-        return None
-
-    field2id_token = getattr(dataset, "field2id_token", None)
-    if isinstance(field2id_token, dict) and iid_field in field2id_token:
-        tokens: list[str] = []
-        for token in _to_sequence(field2id_token[iid_field]):
-            text = _stringify(token)
-            if text is not None:
-                tokens.append(text)
-        return tokens
-
-    id2token = getattr(dataset, "id2token", None)
-    if callable(id2token):
-        num_items = int(dataset.num(iid_field))
-        tokens: list[str] = []
-        for token in _to_sequence(id2token(iid_field, np.arange(num_items))):
-            text = _stringify(token)
-            if text is not None:
-                tokens.append(text)
-        return tokens
-
-    return None
-
-
-class ItemMetadataLookup:
-    """Resolve internal item IDs to readable metadata."""
-
-    def __init__(
-        self,
-        item_metadata: Dict[int, Dict[str, Any]],
-        sources: Dict[str, Any],
-    ):
-        self.item_metadata = item_metadata
-        self.sources = sources
-
-    @classmethod
-    def build(
-        cls,
-        dataset: Any,
-        dataset_name: str,
-        data_path: str = "dataset/",
-        fallback_dataset_name: Optional[str] = "ml-1m",
-    ) -> "ItemMetadataLookup":
-        num_items = int(dataset.num(dataset.iid_field))
-        item_metadata: Dict[int, Dict[str, Any]] = {}
-        direct_coverage = 0
-
-        item_feat = getattr(dataset, "item_feat", None)
-        item_ids = _maybe_get_column(item_feat, "item_id")
-        titles = _maybe_get_column(item_feat, "movie_title") or _maybe_get_column(
-            item_feat, "title"
-        )
-        genres = _maybe_get_column(item_feat, "genre") or _maybe_get_column(
-            item_feat, "genres"
-        )
-        if item_ids is not None and (titles is not None or genres is not None):
-            for idx, internal_id in enumerate(item_ids):
-                item_metadata[int(internal_id)] = {
-                    "raw_item_id": _stringify(internal_id),
-                    "title": (
-                        _sequence_to_text(titles[idx]) if titles is not None else None
-                    ),
-                    "genres": (
-                        _genres_from_value(genres[idx]) if genres is not None else []
-                    ),
-                    "metadata_source": "dataset.item_feat",
-                }
-            direct_coverage = len(item_metadata)
-
-        primary_file = _item_file_path(data_path, dataset_name)
-        fallback_file = _item_file_path(data_path, fallback_dataset_name)
-        primary_raw_metadata = (
-            _read_item_metadata_file(primary_file) if primary_file is not None else {}
-        )
-        fallback_raw_metadata = {}
-        if fallback_file is not None and fallback_file != primary_file:
-            fallback_raw_metadata = _read_item_metadata_file(fallback_file)
-
-        internal_tokens = _extract_internal_item_tokens(dataset)
-        primary_matches = 0
-        fallback_matches = 0
-
-        for internal_id in range(num_items):
-            existing = item_metadata.get(internal_id)
-            if existing is not None and existing.get("title"):
-                continue
-
-            raw_item_id = None
-            if internal_tokens is not None and internal_id < len(internal_tokens):
-                raw_item_id = internal_tokens[internal_id]
-            if raw_item_id is None:
-                raw_item_id = str(internal_id)
-
-            metadata = primary_raw_metadata.get(raw_item_id)
-            if metadata is not None:
-                primary_matches += 1
-            else:
-                metadata = fallback_raw_metadata.get(raw_item_id)
-                if metadata is not None:
-                    fallback_matches += 1
-
-            if metadata is None:
-                item_metadata.setdefault(
-                    internal_id,
-                    {
-                        "raw_item_id": raw_item_id,
-                        "title": None,
-                        "genres": [],
-                        "metadata_source": "unavailable",
-                    },
-                )
-                continue
-
-            merged = dict(metadata)
-            merged["raw_item_id"] = raw_item_id
-            item_metadata[internal_id] = merged
-
-        sources = {
-            "dataset": dataset_name,
-            "data_path": data_path,
-            "primary_item_file": (
-                primary_file
-                if primary_file and os.path.exists(primary_file)
-                else None
-            ),
-            "fallback_item_file": (
-                fallback_file
-                if fallback_file and os.path.exists(fallback_file)
-                else None
-            ),
-            "direct_feature_rows": direct_coverage,
-            "primary_matches": primary_matches,
-            "fallback_matches": fallback_matches,
-            "covered_items": sum(
-                1 for metadata in item_metadata.values() if metadata.get("title")
-            ),
-            "num_items": num_items,
-        }
-        return cls(item_metadata=item_metadata, sources=sources)
-
-    def describe_item(self, item_id: Any) -> Dict[str, Any]:
-        internal_item_id = int(item_id)
-        metadata = self.item_metadata.get(
-            internal_item_id,
-            {
-                "raw_item_id": str(internal_item_id),
-                "title": None,
-                "genres": [],
-                "metadata_source": "unavailable",
-            },
-        )
-        return {
-            "internal_item_id": internal_item_id,
-            "raw_item_id": metadata.get("raw_item_id"),
-            "title": metadata.get("title"),
-            "genres": list(metadata.get("genres", [])),
-            "metadata_source": metadata.get("metadata_source", "unavailable"),
-        }
-
-
 def extract_test_user_items(test_data) -> Dict[int, set[int]]:
     """Extract held-out positive items from RecBole evaluation data."""
     test_user_items = {}
@@ -349,11 +56,28 @@ def extract_test_user_items(test_data) -> Dict[int, set[int]]:
 def build_recommendation_log(
     rankings: dict,
     test_user_items: Dict[int, set[int]],
-    item_metadata: ItemMetadataLookup,
+    item_labels: Optional[Dict[int, str]] = None,
     topk: int = DEFAULT_RECOMMENDATION_LOG_TOPK,
     num_users: int = DEFAULT_RECOMMENDATION_LOG_USERS,
 ) -> dict:
-    """Build a compact, deterministic recommendation log from final rankings."""
+    """Build a compact, deterministic recommendation log from final rankings.
+
+    Parameters
+    ----------
+    rankings : dict
+        Output from ``Evaluator.rank`` containing ``user_ids``,
+        ``topk_items``, and ``pos_index``.
+    test_user_items : dict
+        Mapping from user id to set of ground-truth item ids.
+    item_labels : dict, optional
+        Mapping from internal item id to a human-readable label
+        (e.g. movie title, artist name). When *None*, items are
+        logged by their numeric id only.
+    topk : int
+        Number of top recommendations to log per user.
+    num_users : int
+        Number of users to include in the log (first N by sorted id).
+    """
     user_ids = _to_sequence(rankings.get("user_ids"))
     topk_items = _to_python_scalar(rankings.get("topk_items"))
     pos_index = _to_python_scalar(rankings.get("pos_index"))
@@ -367,9 +91,11 @@ def build_recommendation_log(
             "requested_user_count": selected_num_users,
             "logged_user_count": 0,
             "topk": selected_topk,
-            "metadata_sources": item_metadata.sources,
             "records": [],
         }
+
+    if item_labels is None:
+        item_labels = {}
 
     row_by_user = {int(user_id): idx for idx, user_id in enumerate(user_ids)}
     selected_user_ids = sorted(row_by_user.keys())[:selected_num_users]
@@ -388,20 +114,24 @@ def build_recommendation_log(
         for rank, (item_id, is_hit) in enumerate(
             zip(recommended_items, hit_flags), start=1
         ):
-            recommendation = item_metadata.describe_item(item_id)
-            recommendation["rank"] = rank
-            recommendation["is_hit"] = bool(is_hit)
-            top_recommendations.append(recommendation)
+            top_recommendations.append(
+                {
+                    "item_id": int(item_id),
+                    "label": item_labels.get(int(item_id)),
+                    "rank": rank,
+                    "is_hit": bool(is_hit),
+                }
+            )
 
-        ground_truth_items = [
-            item_metadata.describe_item(item_id)
-            for item_id in sorted(test_user_items.get(user_id, set()))
-        ]
+        ground_truth = sorted(test_user_items.get(user_id, set()))
         records.append(
             {
                 "user_id": int(user_id),
-                "num_test_positives": len(ground_truth_items),
-                "ground_truth_items": ground_truth_items,
+                "num_test_positives": len(ground_truth),
+                "ground_truth_items": [
+                    {"item_id": int(iid), "label": item_labels.get(int(iid))}
+                    for iid in ground_truth
+                ],
                 "top_recommendations": top_recommendations,
                 "num_hits_at_logged_k": int(sum(hit_flags)),
             }
@@ -412,23 +142,16 @@ def build_recommendation_log(
         "requested_user_count": selected_num_users,
         "logged_user_count": len(records),
         "topk": selected_topk,
-        "metadata_sources": item_metadata.sources,
         "records": records,
     }
 
 
-def _join_titles(items: list[dict]) -> str:
-    titles = [item.get("title") or f"item:{item['internal_item_id']}" for item in items]
-    return " | ".join(titles)
-
-
-def _format_recommendation(rec: dict) -> str:
-    title = rec.get("title") or f"item:{rec['internal_item_id']}"
-    genres = ", ".join(rec.get("genres", []))
-    suffix = "hit" if rec.get("is_hit") else "miss"
-    if genres:
-        return f"{rec['rank']}. {title} [{genres}] ({suffix})"
-    return f"{rec['rank']}. {title} ({suffix})"
+def _item_display(item: dict) -> str:
+    """Return a human-readable string for a single item."""
+    label = item.get("label")
+    if label:
+        return label
+    return f"item:{item['item_id']}"
 
 
 def build_recommendation_summary_rows(recommendation_log: dict) -> list[dict]:
@@ -436,16 +159,21 @@ def build_recommendation_summary_rows(recommendation_log: dict) -> list[dict]:
     rows = []
     for record in recommendation_log.get("records", []):
         recommendations = record.get("top_recommendations", [])
-        hit_titles = [rec for rec in recommendations if rec.get("is_hit")]
+        hit_items = [rec for rec in recommendations if rec.get("is_hit")]
         rows.append(
             {
                 "user_id": record["user_id"],
                 "num_test_positives": record["num_test_positives"],
                 "num_hits_at_logged_k": record["num_hits_at_logged_k"],
-                "ground_truth_titles": _join_titles(record.get("ground_truth_items", [])),
-                "hit_titles": _join_titles(hit_titles),
+                "ground_truth": " | ".join(
+                    _item_display(item)
+                    for item in record.get("ground_truth_items", [])
+                ),
+                "hits": " | ".join(_item_display(item) for item in hit_items),
                 "top_recommendations": " | ".join(
-                    _format_recommendation(rec) for rec in recommendations
+                    f"{rec['rank']}. {_item_display(rec)} "
+                    f"({'hit' if rec.get('is_hit') else 'miss'})"
+                    for rec in recommendations
                 ),
             }
         )
@@ -456,22 +184,20 @@ def build_recommendation_detail_rows(recommendation_log: dict) -> list[dict]:
     """Return one row per recommendation for CSV export."""
     rows = []
     for record in recommendation_log.get("records", []):
-        ground_truth_titles = _join_titles(record.get("ground_truth_items", []))
-        for recommendation in record.get("top_recommendations", []):
+        ground_truth_str = " | ".join(
+            _item_display(item) for item in record.get("ground_truth_items", [])
+        )
+        for rec in record.get("top_recommendations", []):
             rows.append(
                 {
                     "user_id": record["user_id"],
                     "num_test_positives": record["num_test_positives"],
                     "num_hits_at_logged_k": record["num_hits_at_logged_k"],
-                    "ground_truth_titles": ground_truth_titles,
-                    "rank": recommendation["rank"],
-                    "is_hit": recommendation["is_hit"],
-                    "recommended_title": recommendation.get("title"),
-                    "recommended_genres": " | ".join(
-                        recommendation.get("genres", [])
-                    ),
-                    "internal_item_id": recommendation["internal_item_id"],
-                    "raw_item_id": recommendation.get("raw_item_id"),
+                    "ground_truth": ground_truth_str,
+                    "rank": rec["rank"],
+                    "is_hit": rec["is_hit"],
+                    "item_id": rec["item_id"],
+                    "label": rec.get("label"),
                 }
             )
     return rows

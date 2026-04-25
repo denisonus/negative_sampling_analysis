@@ -26,7 +26,6 @@ from utils import (
     Trainer,
     InBatchTrainer,
     MixedInBatchTrainer,
-    ItemMetadataLookup,
     extract_test_user_items,
     build_recommendation_log,
     build_recommendation_summary_rows,
@@ -207,16 +206,9 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         seed=config.get("seed", 42) if seed is None else seed,
     )
 
-    item_metadata = ItemMetadataLookup.build(
-        dataset=dataset,
-        dataset_name=config["dataset"],
-        data_path=config.get("data_path", "dataset/"),
-        fallback_dataset_name="ml-1m",
-    )
     recommendation_log = build_recommendation_log(
         rankings=test_rankings,
         test_user_items=extract_test_user_items(test_data),
-        item_metadata=item_metadata,
     )
 
     print(f"\nTest Results for {sampling_strategy}:")
