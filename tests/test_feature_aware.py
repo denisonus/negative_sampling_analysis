@@ -1,10 +1,12 @@
 import unittest
 from functools import lru_cache
+from typing import Any, Iterable, cast
 
 import torch
 
 from models import Tower, TwoTowerModel
 from samplers import get_sampler
+from samplers.hard import HardNegativeSampler
 from utils import extract_feature_data, load_recbole_dataset
 
 
@@ -93,7 +95,7 @@ class FeatureAwareLoaderTests(unittest.TestCase):
             item_feature_tensors=feature_data["item"]["tensors"],
         )
 
-        batch = next(iter(train_data))
+        batch = next(iter(cast(Iterable[Any], train_data)))
         user_ids = batch["user_id"][:4]
         pos_item_ids = batch["item_id"][:4]
         neg_item_ids = torch.tensor([[5, 6], [7, 8], [9, 10], [11, 12]])
@@ -234,13 +236,16 @@ class FeatureAwareModelTests(unittest.TestCase):
             2: {4},
             3: {5},
         }
-        sampler = get_sampler(
-            "hard",
-            num_items=8,
-            num_neg_samples=2,
-            user_item_dict=user_item_dict,
-            model=model,
-            candidate_pool_size=4,
+        sampler = cast(
+            HardNegativeSampler,
+            get_sampler(
+                "hard",
+                num_items=8,
+                num_neg_samples=2,
+                user_item_dict=user_item_dict,
+                model=model,
+                candidate_pool_size=4,
+            ),
         )
 
         neg_items = sampler.sample(

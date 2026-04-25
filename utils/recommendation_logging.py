@@ -172,18 +172,22 @@ def _extract_internal_item_tokens(dataset: Any) -> Optional[list[str]]:
 
     field2id_token = getattr(dataset, "field2id_token", None)
     if isinstance(field2id_token, dict) and iid_field in field2id_token:
-        return [
-            _stringify(token)
-            for token in _to_sequence(field2id_token[iid_field])
-        ]
+        tokens: list[str] = []
+        for token in _to_sequence(field2id_token[iid_field]):
+            text = _stringify(token)
+            if text is not None:
+                tokens.append(text)
+        return tokens
 
     id2token = getattr(dataset, "id2token", None)
     if callable(id2token):
         num_items = int(dataset.num(iid_field))
-        return [
-            _stringify(token)
-            for token in _to_sequence(id2token(iid_field, np.arange(num_items)))
-        ]
+        tokens: list[str] = []
+        for token in _to_sequence(id2token(iid_field, np.arange(num_items))):
+            text = _stringify(token)
+            if text is not None:
+                tokens.append(text)
+        return tokens
 
     return None
 

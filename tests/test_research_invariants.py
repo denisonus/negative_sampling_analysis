@@ -1,4 +1,5 @@
 import unittest
+from typing import cast
 
 import numpy as np
 import torch
@@ -7,6 +8,13 @@ from models import TwoTowerModel
 from run_experiments import set_seed
 from samplers import get_sampler
 from samplers.base import SamplingResult
+from samplers.curriculum import CurriculumNegativeSampler
+from samplers.debiased import DebiasedNegativeSampler
+from samplers.dns import DNSNegativeSampler
+from samplers.hard import HardNegativeSampler
+from samplers.mixed import MixedHardUniformNegativeSampler
+from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
+from samplers.popularity import PopularityNegativeSampler
 from utils.trainer import Trainer
 
 
@@ -61,7 +69,9 @@ class ResearchInvariantTests(unittest.TestCase):
             dropout=0.0,
         )
 
-    def _extract_neg_items(self, sample_result):
+    def _extract_neg_items(
+        self, sample_result: torch.Tensor | SamplingResult
+    ) -> torch.Tensor:
         if isinstance(sample_result, SamplingResult):
             return sample_result.neg_items
         return sample_result
@@ -75,7 +85,9 @@ class ResearchInvariantTests(unittest.TestCase):
             num_neg_samples=self.num_neg_samples,
             user_item_dict=self.user_item_dict,
         )
-        samples_a = sampler_a.sample(self.user_ids, self.pos_item_ids)
+        samples_a = self._extract_neg_items(
+            sampler_a.sample(self.user_ids, self.pos_item_ids)
+        )
         state_a = {
             name: tensor.detach().clone()
             for name, tensor in model_a.state_dict().items()
@@ -89,7 +101,9 @@ class ResearchInvariantTests(unittest.TestCase):
             num_neg_samples=self.num_neg_samples,
             user_item_dict=self.user_item_dict,
         )
-        samples_b = sampler_b.sample(self.user_ids, self.pos_item_ids)
+        samples_b = self._extract_neg_items(
+            sampler_b.sample(self.user_ids, self.pos_item_ids)
+        )
         state_b = {
             name: tensor.detach().clone()
             for name, tensor in model_b.state_dict().items()
@@ -188,56 +202,74 @@ class ResearchInvariantTests(unittest.TestCase):
     def test_sampler_factory_applies_research_critical_kwargs(self):
         model = self._build_model()
 
-        popularity = get_sampler(
-            "popularity",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            item_popularity=self.item_popularity,
-            logq_correction=False,
-            smoothing=0.5,
+        popularity = cast(
+            PopularityNegativeSampler,
+            get_sampler(
+                "popularity",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                item_popularity=self.item_popularity,
+                logq_correction=False,
+                smoothing=0.5,
+            ),
         )
-        hard = get_sampler(
-            "hard",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            model=model,
-            candidate_pool_size=7,
+        hard = cast(
+            HardNegativeSampler,
+            get_sampler(
+                "hard",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                model=model,
+                candidate_pool_size=7,
+            ),
         )
-        dns = get_sampler(
-            "dns",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            model=model,
-            candidate_pool_size=9,
-            dns_temperature=0.3,
+        dns = cast(
+            DNSNegativeSampler,
+            get_sampler(
+                "dns",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                model=model,
+                candidate_pool_size=9,
+                dns_temperature=0.3,
+            ),
         )
-        curriculum = get_sampler(
-            "curriculum",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            model=model,
-            candidate_pool_size=11,
-            curriculum_start_ratio=0.1,
-            curriculum_end_ratio=0.9,
-            curriculum_warmup_epochs=7,
+        curriculum = cast(
+            CurriculumNegativeSampler,
+            get_sampler(
+                "curriculum",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                model=model,
+                candidate_pool_size=11,
+                curriculum_start_ratio=0.1,
+                curriculum_end_ratio=0.9,
+                curriculum_warmup_epochs=7,
+            ),
         )
-        debiased = get_sampler(
-            "debiased",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            tau_plus=0.2,
+        debiased = cast(
+            DebiasedNegativeSampler,
+            get_sampler(
+                "debiased",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                tau_plus=0.2,
+            ),
         )
-        mixed_in_batch_uniform = get_sampler(
-            "mixed_in_batch_uniform",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            train_batch_size=32,
+        mixed_in_batch_uniform = cast(
+            MixedInBatchUniformNegativeSampler,
+            get_sampler(
+                "mixed_in_batch_uniform",
+                num_items=self.num_items,
+                num_neg_samples=self.num_neg_samples,
+                user_item_dict=self.user_item_dict,
+                train_batch_size=32,
+            ),
         )
 
         self.assertFalse(popularity.logq_correction)
@@ -255,25 +287,31 @@ class ResearchInvariantTests(unittest.TestCase):
     def test_fractional_hard_ratio_does_not_collapse_for_single_negative(self):
         model = self._build_model()
 
-        mixed = get_sampler(
-            "mixed_hard_uniform",
-            num_items=self.num_items,
-            num_neg_samples=1,
-            user_item_dict=self.user_item_dict,
-            model=model,
-            hard_ratio=0.5,
-            candidate_pool_size=8,
+        mixed = cast(
+            MixedHardUniformNegativeSampler,
+            get_sampler(
+                "mixed_hard_uniform",
+                num_items=self.num_items,
+                num_neg_samples=1,
+                user_item_dict=self.user_item_dict,
+                model=model,
+                hard_ratio=0.5,
+                candidate_pool_size=8,
+            ),
         )
-        curriculum = get_sampler(
-            "curriculum",
-            num_items=self.num_items,
-            num_neg_samples=1,
-            user_item_dict=self.user_item_dict,
-            model=model,
-            curriculum_start_ratio=0.5,
-            curriculum_end_ratio=0.5,
-            curriculum_warmup_epochs=1,
-            candidate_pool_size=8,
+        curriculum = cast(
+            CurriculumNegativeSampler,
+            get_sampler(
+                "curriculum",
+                num_items=self.num_items,
+                num_neg_samples=1,
+                user_item_dict=self.user_item_dict,
+                model=model,
+                curriculum_start_ratio=0.5,
+                curriculum_end_ratio=0.5,
+                curriculum_warmup_epochs=1,
+                candidate_pool_size=8,
+            ),
         )
 
         set_seed(123)
