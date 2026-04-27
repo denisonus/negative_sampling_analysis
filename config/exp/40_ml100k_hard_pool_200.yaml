@@ -36,4 +36,4 @@ topk: [5, 10, 20]
 valid_metric: 'NDCG@10'
 
 # Device
-device: 'cpu'
+device: 'auto'
