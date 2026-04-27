@@ -79,7 +79,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     recbole_config, dataset, train_data, valid_data, test_data = load_recbole_dataset(
         config["dataset"],
         config.get("data_path", "dataset/"),
-        min_rating=config["min_rating"],
+        min_rating=config.get("min_rating"),
         feature_aware=feature_aware,
     )
 
@@ -90,10 +90,11 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     num_users = dataset.num(dataset.uid_field)
     num_items = dataset.num(dataset.iid_field)
     num_train = len(get_train_interactions(train_data))
-    rating_filter = config["min_rating"]
+    rating_filter = config.get("min_rating")
+    filter_info = f"rating >= {rating_filter}" if rating_filter is not None else "implicit"
     print(
         f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
-        f"rating >= {rating_filter}"
+        f"{filter_info}"
     )
     print(f"Feature-aware mode: {'on' if feature_aware else 'off'}")
     if feature_data is not None:

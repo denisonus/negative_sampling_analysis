@@ -1,5 +1,6 @@
 from .data_utils import (
     load_recbole_dataset,
+    get_dataset_profile,
     get_feature_profile,
     extract_feature_data,
     build_user_item_dict,

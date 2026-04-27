@@ -14,58 +14,117 @@ except ImportError:  # pragma: no cover - fallback for RecBole API differences
     FeatureType = None
 
 
-FEATURE_PROFILES = {
+DATASET_PROFILES = {
     "ml-100k": {
-        "user": ["age", "gender", "occupation"],
-        "item": ["release_year"],
-    }
+        "item_id_field": "item_id",
+        "inter_columns": ["user_id", "item_id", "rating", "timestamp"],
+        "has_timestamp": True,
+        "has_rating": True,
+        "features": {
+            "user": ["age", "gender", "occupation"],
+            "item": ["release_year"],
+        },
+    },
+    "ml-1m": {
+        "item_id_field": "item_id",
+        "inter_columns": ["user_id", "item_id", "rating", "timestamp"],
+        "has_timestamp": True,
+        "has_rating": True,
+    },
+    "lastfm": {
+        "item_id_field": "artist_id",
+        "inter_columns": ["user_id", "artist_id"],
+        "has_timestamp": False,
+        "has_rating": False,
+    },
 }
+
+
+def get_dataset_profile(dataset_name):
+    """Return the full profile for a dataset.
+
+    Returns ``None`` when the dataset is unknown.
+    """
+    profile = DATASET_PROFILES.get(dataset_name)
+    return deepcopy(profile) if profile is not None else None
 
 
 def get_feature_profile(dataset_name):
     """Return the configured side-feature profile for a dataset, if any."""
-    profile = FEATURE_PROFILES.get(dataset_name)
-    return deepcopy(profile) if profile is not None else None
+    profile = get_dataset_profile(dataset_name)
+    if profile is None:
+        return None
+    features = profile.get("features")
+    return deepcopy(features) if features is not None else None
 
 
 def _build_load_columns(dataset_name, feature_aware=False):
-    load_col = {"inter": ["user_id", "item_id", "rating", "timestamp"]}
+    profile = get_dataset_profile(dataset_name)
+    if profile is not None:
+        inter_columns = list(profile["inter_columns"])
+        item_id_field = profile["item_id_field"]
+    else:
+        # Fallback for unknown datasets: assume MovieLens-style
+        inter_columns = ["user_id", "item_id", "rating", "timestamp"]
+        item_id_field = "item_id"
+
+    load_col = {"inter": inter_columns}
     if not feature_aware:
         return load_col
 
-    profile = get_feature_profile(dataset_name)
-    if profile is None:
+    features = get_feature_profile(dataset_name)
+    if features is None:
         raise ValueError(
             f"Feature-aware mode is not configured for dataset '{dataset_name}'"
         )
 
-    if profile.get("user"):
-        load_col["user"] = ["user_id", *profile["user"]]
-    if profile.get("item"):
-        load_col["item"] = ["item_id", *profile["item"]]
+    if features.get("user"):
+        load_col["user"] = ["user_id", *features["user"]]
+    if features.get("item"):
+        load_col["item"] = [item_id_field, *features["item"]]
     return load_col
 
 
 def load_recbole_dataset(
-    dataset_name, data_path="dataset/", min_rating=4, feature_aware=False
+    dataset_name, data_path="dataset/", min_rating=None, feature_aware=False
 ):
-    """Load dataset using RecBole."""
+    """Load dataset using RecBole.
+
+    Parameters
+    ----------
+    dataset_name : str
+        Name of the dataset (must match the directory under *data_path*).
+    data_path : str
+        Root directory containing dataset subdirectories.
+    min_rating : float or None
+        Minimum rating threshold for implicit conversion.  When ``None``
+        (implicit-feedback datasets like LastFM), no rating filter is applied.
+    feature_aware : bool
+        Load side features when ``True``.
+    """
+    profile = get_dataset_profile(dataset_name)
+    item_id_field = profile["item_id_field"] if profile else "item_id"
+    has_timestamp = profile.get("has_timestamp", True) if profile else True
+    has_rating = profile.get("has_rating", True) if profile else True
+
     config_dict = {
         "data_path": data_path,
         "USER_ID_FIELD": "user_id",
-        "ITEM_ID_FIELD": "item_id",
+        "ITEM_ID_FIELD": item_id_field,
         "load_col": _build_load_columns(dataset_name, feature_aware=feature_aware),
         "eval_args": {
             "split": {"RS": [0.8, 0.1, 0.1]},
             "group_by": "user",
-            "order": "TO",
+            "order": "TO" if has_timestamp else "RO",
             "mode": "full",
         },
         "metrics": ["Recall", "NDCG", "MRR", "Hit"],
         "topk": [5, 10, 20],
         "valid_metric": "NDCG@10",
-        "val_interval": {"rating": f"[{min_rating},inf)"},
     }
+
+    if has_rating and min_rating is not None:
+        config_dict["val_interval"] = {"rating": f"[{min_rating},inf)"}
 
     config = Config(model="BPR", dataset=dataset_name, config_dict=config_dict)
     dataset = create_dataset(config)
