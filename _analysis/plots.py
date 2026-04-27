@@ -381,67 +381,93 @@ def plot_training_dynamics(
     output_path=None,
     title_suffix="",
 ):
-    """Plot validation dynamics and convergence speed in one compact figure."""
+    """Plot validation dynamics, train loss curves, and convergence speed."""
     if "raw_results" not in results:
         return None
 
     raw_results = results["raw_results"]
     strategies = list(raw_results.keys())
-    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(20, 5))
     colors = plt.colormaps["tab10"](np.linspace(0, 1, len(strategies)))
 
     convergence = {}
 
     for idx, (strategy, runs) in enumerate(raw_results.items()):
+        # --- Validation metric curves ---
         valid_series = [
             _extract_valid_series(run.get("valid_metrics", []), metric=target_metric)
             for run in runs
             if run.get("valid_metrics")
         ]
         valid_series = [series for series in valid_series if series]
-        if not valid_series:
-            continue
+        if valid_series:
+            min_len = min(len(series) for series in valid_series)
+            valid_array = np.array([series[:min_len] for series in valid_series])
+            mean_valid = np.mean(valid_array, axis=0)
+            epochs = np.arange(1, len(mean_valid) + 1)
 
-        min_len = min(len(series) for series in valid_series)
-        valid_array = np.array([series[:min_len] for series in valid_series])
-        mean_valid = np.mean(valid_array, axis=0)
-        epochs = np.arange(1, len(mean_valid) + 1)
+            axes[0].plot(
+                epochs,
+                mean_valid,
+                label=strategy,
+                color=colors[idx],
+                linewidth=2,
+            )
 
-        axes[0].plot(
-            epochs,
-            mean_valid,
-            label=strategy,
-            color=colors[idx],
-            linewidth=2,
-        )
+            epochs_to_converge = []
+            for series in valid_series:
+                best_value = max(series)
+                if best_value <= 0:
+                    continue
+                threshold = best_value * threshold_percentile
+                for epoch, value in enumerate(series, start=1):
+                    if value >= threshold:
+                        epochs_to_converge.append(epoch)
+                        break
+            if epochs_to_converge:
+                convergence[strategy] = {
+                    "mean": float(np.mean(epochs_to_converge)),
+                    "std": float(np.std(epochs_to_converge)),
+                }
 
-        epochs_to_converge = []
-        for series in valid_series:
-            best_value = max(series)
-            if best_value <= 0:
-                continue
-            threshold = best_value * threshold_percentile
-            for epoch, value in enumerate(series, start=1):
-                if value >= threshold:
-                    epochs_to_converge.append(epoch)
-                    break
-        if epochs_to_converge:
-            convergence[strategy] = {
-                "mean": float(np.mean(epochs_to_converge)),
-                "std": float(np.std(epochs_to_converge)),
-            }
+        # --- Train loss curves ---
+        loss_series = [
+            run.get("train_losses", [])
+            for run in runs
+            if run.get("train_losses")
+        ]
+        loss_series = [series for series in loss_series if series]
+        if loss_series:
+            min_len = min(len(series) for series in loss_series)
+            loss_array = np.array([series[:min_len] for series in loss_series])
+            mean_loss = np.mean(loss_array, axis=0)
+            epochs = np.arange(1, len(mean_loss) + 1)
 
-    axes[0].set_title(f"Validation {target_metric.upper()} Dynamics{title_suffix}")
+            axes[1].plot(
+                epochs,
+                mean_loss,
+                label=strategy,
+                color=colors[idx],
+                linewidth=2,
+            )
+
+    axes[0].set_title(f"Validation {target_metric.upper()}{title_suffix}")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel(target_metric)
     axes[0].legend(loc="best")
     axes[0].grid(True, alpha=0.3)
 
+    axes[1].set_title(f"Train Loss{title_suffix}")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Loss")
+    axes[1].legend(loc="best")
+    axes[1].grid(True, alpha=0.3)
+
     if convergence:
         conv_strategies = list(convergence.keys())
         means = [convergence[s]["mean"] for s in conv_strategies]
         stds = [convergence[s]["std"] for s in conv_strategies]
-        bars = axes[1].bar(
+        bars = axes[2].bar(
             conv_strategies,
             means,
             yerr=stds,
@@ -449,15 +475,15 @@ def plot_training_dynamics(
             color="teal",
             edgecolor="black",
         )
-        _annotate_vertical_bars(axes[1], bars, means, fmt="{:.1f}", offset=0.1)
-        axes[1].set_title(
-            f"Epochs to {threshold_percentile * 100:.0f}% of Best {target_metric.upper()}{title_suffix}"
+        _annotate_vertical_bars(axes[2], bars, means, fmt="{:.1f}", offset=0.1)
+        axes[2].set_title(
+            f"Epochs to {threshold_percentile * 100:.0f}% of Best{title_suffix}"
         )
-        axes[1].set_ylabel("Epoch")
-        axes[1].tick_params(axis="x", rotation=45)
-        axes[1].grid(True, axis="y", alpha=0.2)
+        axes[2].set_ylabel("Epoch")
+        axes[2].tick_params(axis="x", rotation=45)
+        axes[2].grid(True, axis="y", alpha=0.2)
     else:
-        axes[1].axis("off")
+        axes[2].axis("off")
 
     plt.tight_layout()
     _finalize_figure(fig, output_path)

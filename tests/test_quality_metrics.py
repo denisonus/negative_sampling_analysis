@@ -280,12 +280,12 @@ class QualityMetricsTests(unittest.TestCase):
             },
             "raw_results": {
                 "uniform": [
-                    {"valid_metrics": [{"ndcg@10": 0.08}, {"ndcg@10": 0.12}]},
-                    {"valid_metrics": [{"ndcg@10": 0.09}, {"ndcg@10": 0.11}]},
+                    {"valid_metrics": [{"ndcg@10": 0.08}, {"ndcg@10": 0.12}], "train_losses": [1.5, 1.2]},
+                    {"valid_metrics": [{"ndcg@10": 0.09}, {"ndcg@10": 0.11}], "train_losses": [1.4, 1.1]},
                 ],
                 "hard": [
-                    {"valid_metrics": [{"ndcg@10": 0.10}, {"ndcg@10": 0.15}]},
-                    {"valid_metrics": [{"ndcg@10": 0.11}, {"ndcg@10": 0.14}]},
+                    {"valid_metrics": [{"ndcg@10": 0.10}, {"ndcg@10": 0.15}], "train_losses": [1.3, 0.9]},
+                    {"valid_metrics": [{"ndcg@10": 0.11}, {"ndcg@10": 0.14}], "train_losses": [1.2, 0.8]},
                 ],
             },
         }
