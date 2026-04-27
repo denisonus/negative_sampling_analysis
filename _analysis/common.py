@@ -70,6 +70,13 @@ def _get_metric_value(strategy_stats, metric):
     return 0.0
 
 
+def _relative_improvement(value, baseline_value):
+    """Return relative change from baseline, or None for zero baselines."""
+    if np.isclose(baseline_value, 0.0):
+        return None
+    return (value - baseline_value) / abs(baseline_value)
+
+
 def _available_metrics(stats_data, candidates, section="metrics"):
     """Keep only metrics that appear in at least one strategy."""
     return [

@@ -7,12 +7,15 @@ from scipy import stats
 
 from .common import (
     DEFAULT_BUCKET_METRICS,
+    DEFAULT_QUALITY_METRICS,
+    DEFAULT_RELEVANCE_METRICS,
     SUMMARY_OPTIONAL_RELEVANCE_METRICS,
     _available_bucket_metrics,
     _available_metrics,
     _collect_bucket_labels,
     _feature_aware_from_metadata,
     _get_metric_value,
+    _relative_improvement,
     _sorted_strategies,
 )
 
@@ -104,6 +107,122 @@ def save_summary_table(results, output_path, metadata=None):
         writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _ordered_metrics_with_extras(stats_data, section, preferred):
+    """Return preferred metrics first, then any additional observed metrics."""
+    observed = {
+        metric
+        for strategy_stats in stats_data.values()
+        for metric in strategy_stats.get(section, {})
+    }
+    ordered = [metric for metric in preferred if metric in observed]
+    seen = set(ordered)
+    ordered.extend(metric for metric in sorted(observed) if metric not in seen)
+    return ordered
+
+
+def _relative_metric_specs(stats_data, metrics=None):
+    """Build metric specs for relative improvement tables."""
+    if metrics is not None:
+        specs = []
+        for metric in metrics:
+            if any(metric in stats.get("metrics", {}) for stats in stats_data.values()):
+                specs.append(("relevance", "metrics", metric))
+            elif any(
+                metric in stats.get("quality_metrics", {})
+                for stats in stats_data.values()
+            ):
+                specs.append(("quality", "quality_metrics", metric))
+        return specs
+
+    relevance_metrics = _ordered_metrics_with_extras(
+        stats_data,
+        "metrics",
+        [
+            *DEFAULT_RELEVANCE_METRICS,
+            *SUMMARY_OPTIONAL_RELEVANCE_METRICS,
+        ],
+    )
+    quality_metrics = _ordered_metrics_with_extras(
+        stats_data,
+        "quality_metrics",
+        DEFAULT_QUALITY_METRICS,
+    )
+    return [
+        *[("relevance", "metrics", metric) for metric in relevance_metrics],
+        *[("quality", "quality_metrics", metric) for metric in quality_metrics],
+    ]
+
+
+def build_relative_improvement_rows(
+    results, baseline="uniform", metrics=None, metadata=None
+):
+    """Build per-strategy metric improvements relative to a baseline."""
+    stats_data = results.get("statistics", {})
+    if baseline not in stats_data:
+        return []
+
+    metric_specs = _relative_metric_specs(stats_data, metrics=metrics)
+    if not metric_specs:
+        return []
+
+    rows = []
+    feature_aware = _feature_aware_from_metadata(metadata)
+    strategies = [
+        strategy
+        for strategy in _sorted_strategies(stats_data)
+        if strategy != baseline
+    ]
+
+    for strategy in strategies:
+        strategy_stats = stats_data[strategy]
+        for metric_type, section, metric in metric_specs:
+            baseline_stats = stats_data[baseline].get(section, {}).get(metric)
+            strategy_metric_stats = strategy_stats.get(section, {}).get(metric)
+            if baseline_stats is None or strategy_metric_stats is None:
+                continue
+
+            baseline_value = baseline_stats.get("mean", 0.0)
+            strategy_value = strategy_metric_stats.get("mean", 0.0)
+            absolute_delta = strategy_value - baseline_value
+            relative_value = _relative_improvement(strategy_value, baseline_value)
+            rows.append(
+                {
+                    "baseline": baseline,
+                    "strategy": strategy,
+                    "metric_type": metric_type,
+                    "metric": metric,
+                    "baseline_value": baseline_value,
+                    "strategy_value": strategy_value,
+                    "absolute_delta": absolute_delta,
+                    "relative_improvement": relative_value,
+                    "relative_improvement_percent": (
+                        None if relative_value is None else relative_value * 100
+                    ),
+                    "feature_aware": feature_aware,
+                }
+            )
+
+    return rows
+
+
+def save_relative_improvement_table(
+    results, output_path, baseline="uniform", metrics=None, metadata=None
+):
+    """Persist percentage metric improvements relative to a baseline."""
+    rows = build_relative_improvement_rows(
+        results, baseline=baseline, metrics=metrics, metadata=metadata
+    )
+    if not rows:
+        return []
+
+    with open(output_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return rows
 
 
 

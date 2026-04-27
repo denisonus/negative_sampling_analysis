@@ -15,6 +15,7 @@ from .plots import (
     plot_user_bucket_delta_heatmap,
 )
 from .tables import (
+    save_relative_improvement_table,
     save_significance_table,
     save_summary_table,
     save_user_bucket_metrics_table,
@@ -37,6 +38,12 @@ def generate_full_report(results_file, output_dir=None):
 
     save_summary_table(
         results, os.path.join(output_dir, "summary_metrics.csv"), metadata=metadata
+    )
+    save_relative_improvement_table(
+        results,
+        os.path.join(output_dir, "relative_improvements_vs_uniform.csv"),
+        baseline="uniform",
+        metadata=metadata,
     )
     plot_thesis_dashboard(
         results,

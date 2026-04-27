@@ -1,3 +1,4 @@
+import csv
 import json
 import tempfile
 import unittest
@@ -302,6 +303,7 @@ class QualityMetricsTests(unittest.TestCase):
 
             expected_files = [
                 "summary_metrics.csv",
+                "relative_improvements_vs_uniform.csv",
                 "dashboard.png",
                 "metric_by_k.png",
                 "quality_metrics.png",
@@ -326,6 +328,26 @@ class QualityMetricsTests(unittest.TestCase):
                 self.assertTrue((output_dir / filename).exists(), filename)
             for filename in omitted_files:
                 self.assertFalse((output_dir / filename).exists(), filename)
+
+            with (output_dir / "relative_improvements_vs_uniform.csv").open(
+                newline=""
+            ) as csv_file:
+                rows = list(csv.DictReader(csv_file))
+
+            ndcg_row = next(
+                row
+                for row in rows
+                if row["strategy"] == "hard" and row["metric"] == "ndcg@10"
+            )
+            self.assertEqual(ndcg_row["baseline"], "uniform")
+            self.assertEqual(ndcg_row["metric_type"], "relevance")
+            self.assertAlmostEqual(float(ndcg_row["baseline_value"]), 0.11)
+            self.assertAlmostEqual(float(ndcg_row["strategy_value"]), 0.14)
+            self.assertAlmostEqual(float(ndcg_row["absolute_delta"]), 0.03)
+            self.assertAlmostEqual(
+                float(ndcg_row["relative_improvement_percent"]),
+                (0.03 / 0.11) * 100,
+            )
 
 
 if __name__ == "__main__":
