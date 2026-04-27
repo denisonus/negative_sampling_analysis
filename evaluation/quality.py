@@ -10,7 +10,7 @@ def _default_quality_results(topk: Iterable[int]) -> Dict[str, float]:
     metric_names = (
         "item_coverage",
         "novelty",
-        "tail_percentage",
+        "avg_popularity",
         "personalization",
     )
     return {
@@ -74,7 +74,6 @@ def compute_quality_metrics(
     num_items: int,
     topk: Iterable[int],
     seed: int = 42,
-    tail_ratio: float = 0.1,
     pair_sample_cap: int = 10_000,
 ) -> Dict[str, float]:
     """Compute recommendation-quality metrics from final top-k rankings."""
@@ -95,11 +94,6 @@ def compute_quality_metrics(
     popularity = np.clip(popularity, 1e-12, None)
     item_probabilities = popularity / popularity.sum()
 
-    tail_size = max(1, int(np.ceil(num_items * tail_ratio)))
-    tail_items = np.argsort(popularity, kind="stable")[:tail_size]
-    tail_lookup = np.zeros(num_items, dtype=bool)
-    tail_lookup[tail_items] = True
-
     max_available_k = topk_items.shape[1]
     for k in sorted({int(k) for k in topk}):
         effective_k = min(k, max_available_k)
@@ -112,7 +106,7 @@ def compute_quality_metrics(
         results[f"novelty@{k}"] = float(
             (-np.log2(item_probabilities[recommendations])).mean()
         )
-        results[f"tail_percentage@{k}"] = float(tail_lookup[recommendations].mean())
+        results[f"avg_popularity@{k}"] = float(popularity[recommendations].mean())
         results[f"personalization@{k}"] = _compute_personalization(
             recommendations, seed=seed + k, pair_sample_cap=pair_sample_cap
         )

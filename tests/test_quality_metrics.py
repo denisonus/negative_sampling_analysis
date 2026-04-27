@@ -43,17 +43,17 @@ class QualityMetricsTests(unittest.TestCase):
             num_items=5,
             topk=[2],
             seed=7,
-            tail_ratio=0.4,
             pair_sample_cap=10,
         )
 
         probabilities = popularity / popularity.sum()
         expected_novelty = float((-np.log2(probabilities[topk_items])).mean())
+        expected_avg_popularity = float(popularity[topk_items].mean())
         expected_personalization = 1.0 - np.mean([1 / 3, 0.0, 0.0])
 
         self.assertAlmostEqual(metrics["item_coverage@2"], 1.0)
         self.assertAlmostEqual(metrics["novelty@2"], expected_novelty)
-        self.assertAlmostEqual(metrics["tail_percentage@2"], 2 / 6)
+        self.assertAlmostEqual(metrics["avg_popularity@2"], expected_avg_popularity)
         self.assertAlmostEqual(
             metrics["personalization@2"], expected_personalization
         )
@@ -129,7 +129,7 @@ class QualityMetricsTests(unittest.TestCase):
                     "quality_metrics": {
                         "item_coverage@10": 0.3,
                         "novelty@10": 1.1,
-                        "tail_percentage@10": 0.2,
+                        "avg_popularity@10": 5.2,
                         "personalization@10": 0.7,
                     },
                     "timing": {
@@ -157,7 +157,7 @@ class QualityMetricsTests(unittest.TestCase):
                     "quality_metrics": {
                         "item_coverage@10": 0.5,
                         "novelty@10": 1.5,
-                        "tail_percentage@10": 0.4,
+                        "avg_popularity@10": 4.8,
                         "personalization@10": 0.9,
                     },
                     "timing": {
@@ -237,7 +237,7 @@ class QualityMetricsTests(unittest.TestCase):
                 "quality_metrics": {
                     "item_coverage@10": {"mean": 0.5 + offset, "std": 0.01},
                     "novelty@10": {"mean": 1.2 + offset, "std": 0.01},
-                    "tail_percentage@10": {"mean": 0.1 + offset, "std": 0.01},
+                    "avg_popularity@10": {"mean": 5.0 - offset, "std": 0.1},
                     "personalization@10": {"mean": 0.8 - offset, "std": 0.01},
                 },
                 "timing": {

@@ -80,7 +80,7 @@ def save_summary_table(results, output_path, metadata=None):
     )
     quality_metrics = _available_metrics(
         stats_data,
-        ["item_coverage@10", "novelty@10", "tail_percentage@10", "personalization@10"],
+        ["item_coverage@10", "novelty@10", "avg_popularity@10", "personalization@10"],
         section="quality_metrics",
     )
 

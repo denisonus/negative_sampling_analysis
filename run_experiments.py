@@ -397,7 +397,7 @@ def save_results(all_results, output_dir="results", config=None):
     quality_metrics_to_show = [
         "item_coverage@10",
         "novelty@10",
-        "tail_percentage@10",
+        "avg_popularity@10",
         "personalization@10",
     ]
 

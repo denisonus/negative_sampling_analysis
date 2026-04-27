@@ -19,7 +19,7 @@ DEFAULT_BUCKET_METRICS = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
 DEFAULT_QUALITY_METRICS = [
     "item_coverage@10",
     "novelty@10",
-    "tail_percentage@10",
+    "avg_popularity@10",
     "personalization@10",
 ]
 SUMMARY_OPTIONAL_RELEVANCE_METRICS = ["precision@10", "map@10"]
