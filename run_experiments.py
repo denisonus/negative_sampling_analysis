@@ -73,14 +73,18 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     print(f"Running experiment with {sampling_strategy} sampling")
     print(f"{'=' * 60}")
     feature_aware = config.get("feature_aware", False)
+    implicit_feedback = config.get("implicit_feedback", False)
+    min_rating = config.get("min_rating")
 
     # Load data
     print("Loading dataset...")
     recbole_config, dataset, train_data, valid_data, test_data = load_recbole_dataset(
         config["dataset"],
         config.get("data_path", "dataset/"),
-        min_rating=config["min_rating"],
+        min_rating=min_rating,
         feature_aware=feature_aware,
+        implicit_feedback=implicit_feedback,
+        benchmark_filename=config.get("benchmark_filename"),
     )
 
     feature_data = None
@@ -90,10 +94,14 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     num_users = dataset.num(dataset.uid_field)
     num_items = dataset.num(dataset.iid_field)
     num_train = len(get_train_interactions(train_data))
-    rating_filter = config["min_rating"]
+    feedback_label = (
+        "implicit feedback"
+        if implicit_feedback
+        else f"rating >= {min_rating}"
+    )
     print(
         f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
-        f"rating >= {rating_filter}"
+        f"{feedback_label}"
     )
     print(f"Feature-aware mode: {'on' if feature_aware else 'off'}")
     if feature_data is not None:
@@ -234,6 +242,7 @@ def run_experiment(config, sampling_strategy, device, seed=None):
             "num_items": num_items,
             "num_train_interactions": num_train,
             "feature_aware": feature_aware,
+            "implicit_feedback": implicit_feedback,
         },
         "recommendation_log": recommendation_log,
     }

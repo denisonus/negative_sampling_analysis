@@ -28,8 +28,11 @@ def get_feature_profile(dataset_name):
     return deepcopy(profile) if profile is not None else None
 
 
-def _build_load_columns(dataset_name, feature_aware=False):
-    load_col = {"inter": ["user_id", "item_id", "rating", "timestamp"]}
+def _build_load_columns(dataset_name, feature_aware=False, implicit_feedback=False):
+    inter_columns = ["user_id", "item_id"]
+    if not implicit_feedback:
+        inter_columns.extend(["rating", "timestamp"])
+    load_col = {"inter": inter_columns}
     if not feature_aware:
         return load_col
 
@@ -47,31 +50,66 @@ def _build_load_columns(dataset_name, feature_aware=False):
 
 
 def load_recbole_dataset(
-    dataset_name, data_path="dataset/", min_rating=4, feature_aware=False
+    dataset_name,
+    data_path="dataset/",
+    min_rating=4,
+    feature_aware=False,
+    implicit_feedback=False,
+    benchmark_filename=None,
 ):
     """Load dataset using RecBole."""
-    config_dict = {
-        "data_path": data_path,
-        "USER_ID_FIELD": "user_id",
-        "ITEM_ID_FIELD": "item_id",
-        "load_col": _build_load_columns(dataset_name, feature_aware=feature_aware),
-        "eval_args": {
-            "split": {"RS": [0.8, 0.1, 0.1]},
-            "group_by": "user",
-            "order": "TO",
-            "mode": "full",
-        },
-        "metrics": ["Recall", "NDCG", "MRR", "Hit"],
-        "topk": [5, 10, 20],
-        "valid_metric": "NDCG@10",
-        "val_interval": {"rating": f"[{min_rating},inf)"},
-    }
+    config_dict = build_recbole_config_dict(
+        dataset_name=dataset_name,
+        data_path=data_path,
+        min_rating=min_rating,
+        feature_aware=feature_aware,
+        implicit_feedback=implicit_feedback,
+        benchmark_filename=benchmark_filename,
+    )
 
     config = Config(model="BPR", dataset=dataset_name, config_dict=config_dict)
     dataset = create_dataset(config)
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     return config, dataset, train_data, valid_data, test_data
+
+
+def build_recbole_config_dict(
+    dataset_name,
+    data_path="dataset/",
+    min_rating=4,
+    feature_aware=False,
+    implicit_feedback=False,
+    benchmark_filename=None,
+):
+    """Build RecBole config dict for explicit and implicit-feedback datasets."""
+    config_dict = {
+        "data_path": data_path,
+        "USER_ID_FIELD": "user_id",
+        "ITEM_ID_FIELD": "item_id",
+        "load_col": _build_load_columns(
+            dataset_name,
+            feature_aware=feature_aware,
+            implicit_feedback=implicit_feedback,
+        ),
+        "eval_args": {
+            "split": {"RS": [0.8, 0.1, 0.1]},
+            "group_by": "user",
+            "order": "RO" if implicit_feedback else "TO",
+            "mode": "full",
+        },
+        "metrics": ["Recall", "NDCG", "MRR", "Hit"],
+        "topk": [5, 10, 20],
+        "valid_metric": "NDCG@10",
+    }
+
+    if benchmark_filename is not None:
+        config_dict["benchmark_filename"] = list(benchmark_filename)
+
+    if min_rating is not None and not implicit_feedback:
+        config_dict["val_interval"] = {"rating": f"[{min_rating},inf)"}
+
+    return config_dict
 
 
 def _normalize_feature_type(feature_type):
