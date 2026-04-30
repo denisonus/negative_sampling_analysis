@@ -33,7 +33,6 @@ COMMON_DEFAULTS = {
     "metrics": ["Recall", "NDCG", "MRR", "Hit"],
     "topk": [5, 10, 20],
     "valid_metric": "NDCG@10",
-    "device": "auto",
 }
 
 

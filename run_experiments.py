@@ -39,23 +39,6 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def get_device(config):
-    """Get device based on config and availability."""
-    device_setting = config.get("device", "auto")
-
-    if device_setting == "auto":
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        elif torch.cuda.is_available():
-            return torch.device("cuda")
-    elif device_setting == "mps" and torch.backends.mps.is_available():
-        return torch.device("mps")
-    elif device_setting == "cuda" and torch.cuda.is_available():
-        return torch.device("cuda")
-
-    return torch.device("cpu")
-
-
 def load_config(config_path):
     with open(config_path, "r") as f:
         raw_config = yaml.safe_load(f)
@@ -252,7 +235,7 @@ def run_all_experiments(config, strategies=None, num_runs=1):
             "debiased",
         ]
 
-    device = get_device(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Setup seeds for multiple runs
@@ -483,7 +466,7 @@ def save_results(all_results, output_dir="results", config=None):
             "python_version": sys.version,
             "torch_version": torch.__version__,
             "platform": platform.platform(),
-            "device": str(get_device(config)) if config else "unknown",
+            "device": str(torch.device("cuda" if torch.cuda.is_available() else "cpu")),
         },
     }
     metadata_file = os.path.join(run_output_dir, "metadata.json")
