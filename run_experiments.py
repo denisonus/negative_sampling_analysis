@@ -11,8 +11,6 @@ import random
 import argparse
 import warnings
 from datetime import datetime
-from scipy import stats
-
 from models import TwoTowerModel
 from samplers import get_sampler
 from utils import (
@@ -26,11 +24,6 @@ from utils import (
     Trainer,
     InBatchTrainer,
     MixedInBatchTrainer,
-    extract_test_user_items,
-    build_recommendation_log,
-    build_recommendation_summary_rows,
-    build_recommendation_detail_rows,
-    write_csv_rows,
 )
 from evaluation import Evaluator, compute_quality_metrics
 
@@ -214,11 +207,6 @@ def run_experiment(config, sampling_strategy, device, seed=None):
         seed=config.get("seed", 42) if seed is None else seed,
     )
 
-    recommendation_log = build_recommendation_log(
-        rankings=test_rankings,
-        test_user_items=extract_test_user_items(test_data),
-    )
-
     print(f"\nTest Results for {sampling_strategy}:")
     for metric, value in sorted(test_metrics.items()):
         print(f"  {metric}: {value:.4f}")
@@ -244,7 +232,6 @@ def run_experiment(config, sampling_strategy, device, seed=None):
             "feature_aware": feature_aware,
             "implicit_feedback": implicit_feedback,
         },
-        "recommendation_log": recommendation_log,
     }
 
 
@@ -294,25 +281,14 @@ def run_all_experiments(config, strategies=None, num_runs=1):
 
 
 def compute_statistics(all_results):
-    """Compute mean, std, and confidence intervals for metrics across runs."""
+    """Compute mean and std for metrics across runs."""
     stats_results = {}
 
     def summarize_values(values):
         values = np.array(values, dtype=np.float64)
-        mean = np.mean(values)
-        std = np.std(values)
-
-        if len(values) > 1:
-            ci = stats.t.interval(0.95, len(values) - 1, loc=mean, scale=stats.sem(values))
-            ci_lower, ci_upper = ci
-        else:
-            ci_lower, ci_upper = mean, mean
-
         return {
-            "mean": float(mean),
-            "std": float(std),
-            "ci_lower": float(ci_lower),
-            "ci_upper": float(ci_upper),
+            "mean": float(np.mean(values)),
+            "std": float(np.std(values)),
             "values": [float(v) for v in values],
         }
 
@@ -476,9 +452,6 @@ def save_results(all_results, output_dir="results", config=None):
                     ),
                     "train_losses": r["train_history"].get("train_losses", []),
                     "valid_metrics": r["train_history"].get("valid_metrics", []),
-                    "epoch_times": r["train_history"].get("epoch_times", []),
-                    "sampling_times": r["train_history"].get("sampling_times", []),
-                    "training_times": r["train_history"].get("training_times", []),
                 }
                 for r in runs
             ]
@@ -515,47 +488,6 @@ def save_results(all_results, output_dir="results", config=None):
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    recommendation_log_paths = []
-    recommendation_log_dir = os.path.join(run_output_dir, "recommendation_logs")
-    for strategy, runs in all_results.items():
-        for idx, run in enumerate(runs):
-            recommendation_log = run.get("recommendation_log")
-            if recommendation_log is None:
-                continue
-
-            if not os.path.exists(recommendation_log_dir):
-                os.makedirs(recommendation_log_dir)
-
-            seed = run.get("seed", idx)
-            run_idx = run.get("run", idx)
-            recommendation_summary_file = os.path.join(
-                recommendation_log_dir,
-                f"{strategy}_run{run_idx}_seed{seed}_summary.csv",
-            )
-            recommendation_detail_file = os.path.join(
-                recommendation_log_dir,
-                f"{strategy}_run{run_idx}_seed{seed}_details.csv",
-            )
-            write_csv_rows(
-                recommendation_summary_file,
-                build_recommendation_summary_rows(recommendation_log),
-            )
-            write_csv_rows(
-                recommendation_detail_file,
-                build_recommendation_detail_rows(recommendation_log),
-            )
-            recommendation_log_paths.append(
-                os.path.relpath(recommendation_summary_file, run_output_dir)
-            )
-            recommendation_log_paths.append(
-                os.path.relpath(recommendation_detail_file, run_output_dir)
-            )
-
-    if recommendation_log_paths:
-        metadata["recommendation_log_files"] = recommendation_log_paths
-        with open(metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
-
     try:
         from analysis import generate_full_report
 
@@ -564,8 +496,6 @@ def save_results(all_results, output_dir="results", config=None):
         print(f"Warning: automatic analysis generation failed: {e}")
 
     print(f"\nResults saved to: {run_output_dir}")
-    if recommendation_log_paths:
-        print(f"Recommendation logs saved to: {recommendation_log_dir}")
     return stats_results, run_output_dir
 
 

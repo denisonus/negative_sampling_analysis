@@ -42,8 +42,6 @@ def save_user_bucket_metrics_table(results, output_path):
                         "metric": metric,
                         "mean": metric_stats.get("mean", 0.0),
                         "std": metric_stats.get("std", 0.0),
-                        "ci_lower": metric_stats.get("ci_lower", 0.0),
-                        "ci_upper": metric_stats.get("ci_upper", 0.0),
                         "num_runs": len(metric_stats.get("values", [])),
                     }
                 )
@@ -109,19 +107,6 @@ def save_summary_table(results, output_path, metadata=None):
         writer.writerows(rows)
 
 
-def _ordered_metrics_with_extras(stats_data, section, preferred):
-    """Return preferred metrics first, then any additional observed metrics."""
-    observed = {
-        metric
-        for strategy_stats in stats_data.values()
-        for metric in strategy_stats.get(section, {})
-    }
-    ordered = [metric for metric in preferred if metric in observed]
-    seen = set(ordered)
-    ordered.extend(metric for metric in sorted(observed) if metric not in seen)
-    return ordered
-
-
 def _relative_metric_specs(stats_data, metrics=None):
     """Build metric specs for relative improvement tables."""
     if metrics is not None:
@@ -136,22 +121,12 @@ def _relative_metric_specs(stats_data, metrics=None):
                 specs.append(("quality", "quality_metrics", metric))
         return specs
 
-    relevance_metrics = _ordered_metrics_with_extras(
-        stats_data,
-        "metrics",
-        [
-            *DEFAULT_RELEVANCE_METRICS,
-            *SUMMARY_OPTIONAL_RELEVANCE_METRICS,
-        ],
-    )
-    quality_metrics = _ordered_metrics_with_extras(
-        stats_data,
-        "quality_metrics",
-        DEFAULT_QUALITY_METRICS,
-    )
+    all_relevance = [*DEFAULT_RELEVANCE_METRICS, *SUMMARY_OPTIONAL_RELEVANCE_METRICS]
+    relevance = _available_metrics(stats_data, all_relevance)
+    quality = _available_metrics(stats_data, DEFAULT_QUALITY_METRICS, section="quality_metrics")
     return [
-        *[("relevance", "metrics", metric) for metric in relevance_metrics],
-        *[("quality", "quality_metrics", metric) for metric in quality_metrics],
+        *[("relevance", "metrics", m) for m in relevance],
+        *[("quality", "quality_metrics", m) for m in quality],
     ]
 
 

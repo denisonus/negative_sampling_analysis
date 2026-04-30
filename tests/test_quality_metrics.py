@@ -250,8 +250,6 @@ class QualityMetricsTests(unittest.TestCase):
                         "ndcg@10": {
                             "mean": 0.10 + offset,
                             "std": 0.01,
-                            "ci_lower": 0.09,
-                            "ci_upper": 0.11,
                             "values": [0.10 + offset, 0.11 + offset],
                         },
                         "recall@10": {"mean": 0.20 + offset, "values": [0.20 + offset]},
@@ -262,8 +260,6 @@ class QualityMetricsTests(unittest.TestCase):
                         "ndcg@10": {
                             "mean": 0.15 + offset,
                             "std": 0.01,
-                            "ci_lower": 0.14,
-                            "ci_upper": 0.16,
                             "values": [0.15 + offset, 0.16 + offset],
                         },
                         "recall@10": {"mean": 0.25 + offset, "values": [0.25 + offset]},
