@@ -26,6 +26,7 @@ from utils import (
     MixedInBatchTrainer,
 )
 from evaluation import Evaluator, compute_quality_metrics
+from utils.experiment_config import resolve_config
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -57,7 +58,8 @@ def get_device(config):
 
 def load_config(config_path):
     with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+        raw_config = yaml.safe_load(f)
+    return resolve_config(raw_config)
 
 
 def run_experiment(config, sampling_strategy, device, seed=None):

@@ -1,6 +1,8 @@
 # ML-100K Experiment Suite
 
 This suite is the main rerun package for the thesis comparison on `ml-100k`.
+Each YAML file is compact: `dataset: ml-100k` plus only values that differ from
+the default ML-100K profile in code.
 
 Method benchmark:
 - `10_ml100k_benchmark.yaml`
@@ -29,6 +31,3 @@ Feature-aware comparisons:
 - in-batch + uniform index sweep: `78_ml100k_feature_mns_index_1024.yaml`, `79_ml100k_feature_mns_index_2048.yaml`
 - hard-uniform best interaction: `80_ml100k_feature_hard_uniform_pool50_ratio0p75.yaml`
 - in-batch + uniform batch interaction: `81_ml100k_feature_mns_bs256_index1024.yaml`
-
-Legacy single feature-aware smoke config:
-- `74_ml100k_feature_aware.yaml`

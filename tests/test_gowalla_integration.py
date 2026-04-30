@@ -10,6 +10,7 @@ from scripts.prepare_gowalla_lightgcn import (
     write_recbole_inter,
 )
 from utils.data_utils import build_recbole_config_dict
+from utils.experiment_config import resolve_config
 
 
 class GowallaConverterTests(unittest.TestCase):
@@ -80,12 +81,13 @@ class GowallaLoaderConfigTests(unittest.TestCase):
         self.assertEqual(config["eval_args"]["order"], "TO")
 
     def test_implicit_gowalla_config_uses_benchmark_files(self):
+        resolved = resolve_config({"dataset": "gowalla-1m"})
         config = build_recbole_config_dict(
-            "gowalla-1m",
-            data_path="dataset/",
-            min_rating=None,
-            implicit_feedback=True,
-            benchmark_filename=["train", "valid", "test"],
+            resolved["dataset"],
+            data_path=resolved["data_path"],
+            min_rating=resolved["min_rating"],
+            implicit_feedback=resolved["implicit_feedback"],
+            benchmark_filename=resolved["benchmark_filename"],
         )
 
         self.assertEqual(config["load_col"]["inter"], ["user_id", "item_id"])

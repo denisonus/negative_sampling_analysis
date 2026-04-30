@@ -19,6 +19,13 @@ Supported strategies:
 - `curriculum`
 - `debiased`
 
+Supported datasets:
+- `ml-100k`
+- `gowalla-1m`
+
+Configs are compact: each YAML file declares a dataset and only the values that
+override the code defaults for that dataset.
+
 ## Main Files
 
 ```text

@@ -12,3 +12,4 @@ from .data_utils import (
     SimpleDataLoader,
 )
 from .trainer import Trainer, InBatchTrainer, MixedInBatchTrainer
+from .experiment_config import resolve_config, COMMON_DEFAULTS, DATASET_PRESETS
