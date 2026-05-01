@@ -18,6 +18,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config["metrics"], ["Recall", "NDCG", "MRR", "Hit"])
         self.assertEqual(config["topk"], [5, 10, 20])
         self.assertEqual(config["valid_metric"], "NDCG@10")
+        self.assertEqual(config["eval_batch_size"], 256)
         self.assertEqual(config["min_rating"], 4)
         self.assertFalse(config["implicit_feedback"])
         self.assertNotIn("benchmark_filename", config)
@@ -34,6 +35,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config["topk"], [20, 50])
         self.assertEqual(config["valid_metric"], "NDCG@20")
         self.assertEqual(config["train_batch_size"], 1024)
+        self.assertEqual(config["eval_batch_size"], 512)
         self.assertEqual(config["candidate_pool_size"], 300)
 
     def test_config_overrides_win_over_defaults_and_presets(self):

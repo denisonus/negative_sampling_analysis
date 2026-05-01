@@ -39,12 +39,14 @@ class Evaluator:
         metrics=["Recall", "NDCG", "MRR", "Hit"],
         topk=[5, 10, 20],
         device="cpu",
+        batch_size=256,
     ):
         self.num_items = num_items
         self.metrics = [m.lower() for m in metrics]
         self.topk = topk
         self.max_k = max(topk)
         self.device = device
+        self.batch_size = max(int(batch_size), 1)
 
         mock_config = MockConfig(topk)
         self.metric_instances = {
@@ -132,7 +134,7 @@ class Evaluator:
         )
 
         users_list = list(test_user_items.keys())
-        batch_size = 256
+        batch_size = self.batch_size
         all_user_ids, all_topk_items, all_pos_index, all_pos_len = [], [], [], []
 
         with torch.no_grad():

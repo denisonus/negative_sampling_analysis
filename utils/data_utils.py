@@ -310,14 +310,22 @@ def get_train_interactions(train_data):
     return interactions
 
 
-class SimpleDataLoader:
-    """Simple dataloader for training two-tower model."""
+class TrainLoader:
+    """Small training mini-batch loader for user-item pairs."""
 
     def __init__(self, interactions, batch_size, shuffle=True):
-        self.interactions = interactions
         self.batch_size = batch_size
         self.shuffle = shuffle
-        self.num_samples = len(interactions)
+
+        interactions_array = np.asarray(interactions, dtype=np.int64)
+        if interactions_array.size == 0:
+            interactions_array = interactions_array.reshape(0, 2)
+        if interactions_array.ndim != 2 or interactions_array.shape[1] != 2:
+            raise ValueError("TrainLoader interactions must be user-item pairs")
+
+        self.users = interactions_array[:, 0]
+        self.items = interactions_array[:, 1]
+        self.num_samples = len(interactions_array)
 
     def __iter__(self):
         indices = np.arange(self.num_samples)
@@ -328,15 +336,9 @@ class SimpleDataLoader:
             end_idx = min(start_idx + self.batch_size, self.num_samples)
             batch_indices = indices[start_idx:end_idx]
 
-            users, items = [], []
-            for idx in batch_indices:
-                user, item = self.interactions[idx]
-                users.append(user)
-                items.append(item)
-
             yield (
-                torch.tensor(users, dtype=torch.long),
-                torch.tensor(items, dtype=torch.long),
+                torch.from_numpy(self.users[batch_indices]).long(),
+                torch.from_numpy(self.items[batch_indices]).long(),
             )
 
     def __len__(self):
