@@ -22,15 +22,37 @@ def _annotate_vertical_bars(ax, bars, values, fmt="{:.3f}", offset=None):
         max_abs = max((abs(value) for value in values), default=0.0)
         offset = max_abs * 0.03 if max_abs > 0 else 0.01
 
+    annotation_positions = []
     for bar, value in zip(bars, values):
+        annotation_y = value + (offset if value >= 0 else -offset)
+        annotation_positions.append(annotation_y)
         ax.text(
             bar.get_x() + bar.get_width() / 2,
-            value + (offset if value >= 0 else -offset),
+            annotation_y,
             fmt.format(value),
             ha="center",
             va="bottom" if value >= 0 else "top",
             fontsize=8,
         )
+
+    _pad_y_limits_for_annotations(ax, annotation_positions)
+
+
+def _pad_y_limits_for_annotations(ax, y_values, padding_fraction=0.08):
+    """Reserve vertical space for labels that sit just outside plotted bars."""
+    if not y_values:
+        return
+
+    bottom, top = ax.get_ylim()
+    span = top - bottom
+    if span <= 0:
+        span = max(abs(top), abs(bottom), 1.0)
+
+    padding = span * padding_fraction
+    new_bottom = min(bottom, min(y_values) - padding)
+    new_top = max(top, max(y_values) + padding)
+    if new_bottom != bottom or new_top != top:
+        ax.set_ylim(new_bottom, new_top)
 
 
 def _label_points(ax, labels, x_values, y_values, fontsize=9):
