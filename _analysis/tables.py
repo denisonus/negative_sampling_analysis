@@ -68,17 +68,29 @@ def save_summary_table(results, output_path, metadata=None):
         stats_data,
         [
             "ndcg@10",
+            "ndcg@20",
             "recall@10",
             "recall@20",
             "mrr@10",
+            "mrr@20",
             "hit@10",
+            "hit@20",
             *SUMMARY_OPTIONAL_RELEVANCE_METRICS,
         ],
         section="metrics",
     )
     quality_metrics = _available_metrics(
         stats_data,
-        ["item_coverage@10", "novelty@10", "avg_popularity@10", "personalization@10"],
+        [
+            "item_coverage@10",
+            "item_coverage@20",
+            "novelty@10",
+            "novelty@20",
+            "avg_popularity@10",
+            "avg_popularity@20",
+            "personalization@10",
+            "personalization@20",
+        ],
         section="quality_metrics",
     )
 

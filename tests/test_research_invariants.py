@@ -15,7 +15,7 @@ from samplers.hard import HardNegativeSampler
 from samplers.mixed import MixedHardUniformNegativeSampler
 from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 from samplers.popularity import PopularityNegativeSampler
-from utils.trainer import Trainer
+from utils.trainer import Trainer, _select_validation_log_metrics
 
 
 class DummyEvaluator:
@@ -366,6 +366,28 @@ class ResearchInvariantTests(unittest.TestCase):
         self.assertEqual(history["best_epoch"], 0)
         self.assertAlmostEqual(history["best_metric"], 0.8)
         self.assertAlmostEqual(model.weight.item(), 1.0)
+
+    def test_validation_log_metrics_follow_configured_k(self):
+        metrics = {
+            "recall@20": 0.11,
+            "ndcg@20": 0.22,
+            "mrr@20": 0.33,
+            "hit@20": 0.44,
+            "recall@50": 0.55,
+            "ndcg@50": 0.66,
+        }
+
+        logged = _select_validation_log_metrics(metrics, "NDCG@20")
+
+        self.assertEqual(
+            logged,
+            {
+                "recall@20": 0.11,
+                "ndcg@20": 0.22,
+                "mrr@20": 0.33,
+                "hit@20": 0.44,
+            },
+        )
 
 
 if __name__ == "__main__":

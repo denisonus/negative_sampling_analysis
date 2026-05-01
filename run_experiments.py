@@ -31,6 +31,39 @@ from utils.experiment_config import resolve_config
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
+def _metric_k(metric_name):
+    if not metric_name or "@" not in metric_name:
+        return None
+    try:
+        return int(str(metric_name).rsplit("@", 1)[1])
+    except ValueError:
+        return None
+
+
+def _primary_k(config):
+    valid_metric_k = _metric_k(config.get("valid_metric", ""))
+    if valid_metric_k is not None:
+        return valid_metric_k
+    topk = config.get("topk", [10])
+    return 10 if 10 in topk else min(topk)
+
+
+def _metrics_to_show(config):
+    k = _primary_k(config)
+    metrics = [f"ndcg@{k}", f"recall@{k}", "recall@20", f"mrr@{k}", f"hit@{k}"]
+    return list(dict.fromkeys(metrics))
+
+
+def _quality_metrics_to_show(config):
+    k = _primary_k(config)
+    return [
+        f"item_coverage@{k}",
+        f"novelty@{k}",
+        f"avg_popularity@{k}",
+        f"personalization@{k}",
+    ]
+
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -176,13 +209,15 @@ def run_experiment(config, sampling_strategy, device, seed=None):
     print("\nFinal Test Evaluation...")
     test_rankings = evaluator.rank(model, test_data)
     test_metrics = evaluator.evaluate_from_rankings(test_rankings)
+    bucket_k = 10 if 10 in evaluator.topk else _primary_k(config)
     bucket_metrics = evaluator.evaluate_user_buckets_from_rankings(
         test_rankings,
         user_train_counts=user_train_counts,
+        target_k=bucket_k,
     )
-    if not bucket_metrics and 10 not in evaluator.topk:
+    if not bucket_metrics and bucket_k not in evaluator.topk:
         print(
-            "Warning: user bucket metrics skipped because 10 is not in configured topk"
+            f"Warning: user bucket metrics skipped because {bucket_k} is not in configured topk"
         )
     quality_metrics = compute_quality_metrics(
         test_rankings["topk_items"],
@@ -354,13 +389,8 @@ def save_results(all_results, output_dir="results", config=None):
     print("COMPARISON OF NEGATIVE SAMPLING STRATEGIES (summary statistics)")
     print("=" * 100)
 
-    metrics_to_show = ["ndcg@10", "recall@10", "recall@20", "mrr@10", "hit@10"]
-    quality_metrics_to_show = [
-        "item_coverage@10",
-        "novelty@10",
-        "avg_popularity@10",
-        "personalization@10",
-    ]
+    metrics_to_show = _metrics_to_show(config or {})
+    quality_metrics_to_show = _quality_metrics_to_show(config or {})
 
     # Header
     header = f"{'Strategy':<15}"
@@ -390,7 +420,7 @@ def save_results(all_results, output_dir="results", config=None):
 
     if any(stats_data["quality_metrics"] for stats_data in stats_results.values()):
         print("\n" + "=" * 100)
-        print("RECOMMENDATION QUALITY METRICS (@10)")
+        print(f"RECOMMENDATION QUALITY METRICS (@{_primary_k(config or {})})")
         print("=" * 100)
         header = f"{'Strategy':<15}"
         for metric in quality_metrics_to_show:

@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from run_experiments import load_config
+from run_experiments import _metrics_to_show, _quality_metrics_to_show, load_config
 from utils.experiment_config import resolve_config
 
 
@@ -70,6 +70,13 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config["dataset"], "gowalla-1m")
         self.assertEqual(config["benchmark_filename"], ["train", "valid", "test"])
         self.assertEqual(config["valid_metric"], "NDCG@20")
+
+    def test_gowalla_reporting_uses_configured_validation_k(self):
+        config = resolve_config({"dataset": "gowalla-1m"})
+
+        self.assertIn("ndcg@20", _metrics_to_show(config))
+        self.assertIn("recall@20", _metrics_to_show(config))
+        self.assertIn("item_coverage@20", _quality_metrics_to_show(config))
 
 
 if __name__ == "__main__":

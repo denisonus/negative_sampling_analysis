@@ -12,6 +12,7 @@ from .common import (
     _collect_bucket_labels,
     _finalize_figure,
     _get_metric_value,
+    _preferred_metric,
     _sorted_strategies,
 )
 
@@ -47,7 +48,7 @@ def _label_points(ax, labels, x_values, y_values, fontsize=9):
 def plot_metric_by_k(
     results,
     metric_bases=None,
-    ks=(5, 10, 20),
+    ks=(5, 10, 20, 50),
     output_path=None,
     title_suffix="",
 ):
@@ -312,6 +313,10 @@ def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
     )
     if not relevance_metrics:
         return None
+    primary_metric = _preferred_metric(stats_data, metric_base="ndcg")
+    primary_quality_metric = _preferred_metric(
+        stats_data, metric_base="item_coverage", section="quality_metrics"
+    )
     x = np.arange(len(strategies))
     width = 0.8 / len(relevance_metrics)
     colors = plt.colormaps["Set2"](np.linspace(0, 1, len(relevance_metrics)))
@@ -327,23 +332,24 @@ def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
             color=colors[idx],
             label=metric,
         )
-    axes[0, 0].set_title(f"Relevance Metrics (@10){title_suffix}")
+    primary_k = primary_metric.rsplit("@", 1)[-1]
+    axes[0, 0].set_title(f"Relevance Metrics (@{primary_k}){title_suffix}")
     axes[0, 0].set_xticks(x)
     axes[0, 0].set_xticklabels(strategies, rotation=45, ha="right")
     axes[0, 0].legend(loc="upper right")
     axes[0, 0].grid(True, axis="y", alpha=0.2)
 
     total_times = [_get_metric_value(stats_data[s], "total_time") for s in strategies]
-    ndcg_values = [_get_metric_value(stats_data[s], "ndcg@10") for s in strategies]
+    ndcg_values = [_get_metric_value(stats_data[s], primary_metric) for s in strategies]
     axes[0, 1].scatter(total_times, ndcg_values, color="steelblue", edgecolor="black")
     _label_points(axes[0, 1], strategies, total_times, ndcg_values)
     axes[0, 1].set_title(f"Efficiency Frontier{title_suffix}")
     axes[0, 1].set_xlabel("Total Time (s)")
-    axes[0, 1].set_ylabel("NDCG@10")
+    axes[0, 1].set_ylabel(primary_metric.upper())
     axes[0, 1].grid(True, alpha=0.3)
 
     coverage_values = [
-        stats_data[s].get("quality_metrics", {}).get("item_coverage@10", {}).get("mean", 0)
+        stats_data[s].get("quality_metrics", {}).get(primary_quality_metric, {}).get("mean", 0)
         for s in strategies
     ]
     axes[1, 0].scatter(
@@ -351,8 +357,8 @@ def plot_thesis_dashboard(results, output_path=None, title_suffix=""):
     )
     _label_points(axes[1, 0], strategies, coverage_values, ndcg_values)
     axes[1, 0].set_title(f"Relevance vs Coverage{title_suffix}")
-    axes[1, 0].set_xlabel("item_coverage@10")
-    axes[1, 0].set_ylabel("NDCG@10")
+    axes[1, 0].set_xlabel(primary_quality_metric)
+    axes[1, 0].set_ylabel(primary_metric.upper())
     axes[1, 0].grid(True, alpha=0.3)
 
     # Sampling vs training cost

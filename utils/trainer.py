@@ -12,6 +12,26 @@ from samplers.debiased import DebiasedNegativeSampler
 from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 
 
+def _select_validation_log_metrics(metrics, valid_metric_name):
+    """Pick a compact, non-empty validation log for the configured metric."""
+    if not metrics:
+        return {}
+
+    valid_metric_name = valid_metric_name.lower()
+    configured_k = valid_metric_name.rsplit("@", 1)[-1] if "@" in valid_metric_name else None
+    selected = {}
+
+    if configured_k is not None:
+        selected = {
+            key: value for key, value in metrics.items() if key.endswith(f"@{configured_k}")
+        }
+
+    if not selected and valid_metric_name in metrics:
+        selected = {valid_metric_name: metrics[valid_metric_name]}
+
+    return selected or metrics
+
+
 def _build_interaction_matrix(user_item_dict, num_items, device):
     """Build a sparse user-item matrix for fast false-negative masking."""
     rows, cols = [], []
@@ -154,11 +174,13 @@ class Trainer:
                 valid_metric = metrics.get(valid_metric_name, 0)
                 self.valid_metrics.append({k: float(v) for k, v in metrics.items()})
 
-                # Log @10 metrics during training
-                metrics_at_10 = {
-                    k: f"{v:.4f}" for k, v in metrics.items() if "@10" in k
+                logged_metrics = {
+                    key: f"{value:.4f}"
+                    for key, value in _select_validation_log_metrics(
+                        metrics, valid_metric_name
+                    ).items()
                 }
-                print(f"Validation: {metrics_at_10}")
+                print(f"Validation: {logged_metrics}")
 
                 # Learning rate scheduling
                 self.scheduler.step(valid_metric)

@@ -10,17 +10,24 @@ DEFAULT_RELEVANCE_METRICS = [
     "ndcg@10",
     "recall@10",
     "recall@20",
+    "ndcg@20",
+    "mrr@20",
+    "hit@20",
     "mrr@10",
     "hit@10",
 ]
 DEFAULT_METRIC_BY_K_BASES = ["ndcg", "recall", "mrr"]
-DEFAULT_SWEEP_METRICS = ["ndcg@10", "recall@10", "recall@20", "mrr@10"]
-DEFAULT_BUCKET_METRICS = ["ndcg@10", "recall@10", "hit@10", "mrr@10"]
+DEFAULT_SWEEP_METRICS = ["ndcg@10", "ndcg@20", "recall@10", "recall@20", "mrr@10", "mrr@20"]
+DEFAULT_BUCKET_METRICS = ["ndcg@10", "ndcg@20", "recall@10", "recall@20", "hit@10", "hit@20", "mrr@10", "mrr@20"]
 DEFAULT_QUALITY_METRICS = [
     "item_coverage@10",
+    "item_coverage@20",
     "novelty@10",
+    "novelty@20",
     "avg_popularity@10",
+    "avg_popularity@20",
     "personalization@10",
+    "personalization@20",
 ]
 SUMMARY_OPTIONAL_RELEVANCE_METRICS = ["precision@10", "map@10"]
 FEATURE_UPLIFT_METRICS = ["ndcg@10", "recall@10", "recall@20", "mrr@10"]
@@ -40,7 +47,49 @@ def _finalize_figure(fig, output_path=None):
         plt.close(fig)
 
 
+def _metric_k(metric):
+    if "@" not in metric:
+        return None
+    try:
+        return int(metric.rsplit("@", 1)[1])
+    except ValueError:
+        return None
+
+
+def _available_metric_family(stats_data, metric_base, section="metrics"):
+    prefix = f"{metric_base}@"
+    metrics = set()
+    for strategy_stats in stats_data.values():
+        metrics.update(
+            metric
+            for metric in strategy_stats.get(section, {})
+            if metric.startswith(prefix)
+        )
+    return sorted(
+        metrics,
+        key=lambda metric: (
+            _metric_k(metric) is None,
+            _metric_k(metric) if _metric_k(metric) is not None else metric,
+        ),
+    )
+
+
+def _preferred_metric(stats_data, metric_base="ndcg", section="metrics", preferred_ks=(10, 20, 50, 5)):
+    metrics = _available_metric_family(stats_data, metric_base, section=section)
+    if not metrics:
+        return f"{metric_base}@10"
+
+    by_k = {_metric_k(metric): metric for metric in metrics}
+    for k in preferred_ks:
+        if k in by_k:
+            return by_k[k]
+    return metrics[0]
+
+
 def _sorted_strategies(stats_data, metric="ndcg@10"):
+    if not any(metric in stats.get("metrics", {}) for stats in stats_data.values()):
+        metric_base = metric.split("@", 1)[0]
+        metric = _preferred_metric(stats_data, metric_base=metric_base)
     return sorted(
         stats_data.keys(),
         key=lambda strategy: stats_data[strategy]["metrics"].get(metric, {}).get("mean", 0),

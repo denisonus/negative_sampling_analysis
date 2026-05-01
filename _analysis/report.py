@@ -5,7 +5,12 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from .common import _load_metadata_for_results, _title_suffix_from_metadata, load_results
+from .common import (
+    _load_metadata_for_results,
+    _preferred_metric,
+    _title_suffix_from_metadata,
+    load_results,
+)
 from .plots import (
     plot_ablation_delta,
     plot_metric_by_k,
@@ -35,6 +40,8 @@ def generate_full_report(results_file, output_dir=None):
     metadata = _load_metadata_for_results(results_file)
     title_suffix = _title_suffix_from_metadata(metadata)
     stats = results.get("statistics", {})
+    primary_metric = _preferred_metric(stats, metric_base="ndcg")
+    primary_metric_file_label = primary_metric.replace("@", "")
 
     save_summary_table(
         results, os.path.join(output_dir, "summary_metrics.csv"), metadata=metadata
@@ -76,8 +83,10 @@ def generate_full_report(results_file, output_dir=None):
         plot_user_bucket_delta_heatmap(
             results,
             baseline="uniform",
-            metric="ndcg@10",
-            output_path=os.path.join(output_dir, "user_bucket_ndcg10_delta_heatmap.png"),
+            metric=primary_metric,
+            output_path=os.path.join(
+                output_dir, f"user_bucket_{primary_metric_file_label}_delta_heatmap.png"
+            ),
             title_suffix=title_suffix,
         )
 
@@ -85,20 +94,25 @@ def generate_full_report(results_file, output_dir=None):
         plot_ablation_delta(
             results,
             baseline="uniform",
-            metric="ndcg@10",
-            output_path=os.path.join(output_dir, "ndcg10_delta_vs_uniform.png"),
+            metric=primary_metric,
+            output_path=os.path.join(
+                output_dir, f"{primary_metric_file_label}_delta_vs_uniform.png"
+            ),
             title_suffix=title_suffix,
         )
 
     if "raw_results" in results:
         plot_training_dynamics(
             results,
+            target_metric=primary_metric,
             output_path=os.path.join(output_dir, "training_dynamics.png"),
             title_suffix=title_suffix,
         )
 
     save_significance_table(
-        results, os.path.join(output_dir, "significance_ndcg10.csv")
+        results,
+        os.path.join(output_dir, f"significance_{primary_metric_file_label}.csv"),
+        metric=primary_metric,
     )
 
     print(f"Analysis bundle saved to: {output_dir}")
