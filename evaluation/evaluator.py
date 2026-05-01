@@ -6,6 +6,8 @@ import torch
 from collections import defaultdict
 from recbole.evaluator.metrics import Hit, Recall, NDCG, MRR, Precision, MAP
 
+from utils.experiment_config import COMMON_DEFAULTS
+
 if not hasattr(np, "float"):  # pragma: no cover - RecBole still references np.float
     setattr(np, "float", float)
 
@@ -36,19 +38,24 @@ class Evaluator:
     def __init__(
         self,
         num_items,
-        metrics=["Recall", "NDCG", "MRR", "Hit"],
-        topk=[5, 10, 20],
+        metrics=None,
+        topk=None,
         device="cpu",
         batch_size=256,
     ):
+        if metrics is None:
+            metrics = COMMON_DEFAULTS["metrics"]
+        if topk is None:
+            topk = COMMON_DEFAULTS["topk"]
+
         self.num_items = num_items
         self.metrics = [m.lower() for m in metrics]
-        self.topk = topk
-        self.max_k = max(topk)
+        self.topk = list(topk)
+        self.max_k = max(self.topk)
         self.device = device
         self.batch_size = max(int(batch_size), 1)
 
-        mock_config = MockConfig(topk)
+        mock_config = MockConfig(self.topk)
         self.metric_instances = {
             name: self.METRIC_CLASSES[name](mock_config)
             for name in self.metrics

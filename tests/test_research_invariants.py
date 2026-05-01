@@ -15,6 +15,7 @@ from samplers.hard import HardNegativeSampler
 from samplers.mixed import MixedHardUniformNegativeSampler
 from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 from samplers.popularity import PopularityNegativeSampler
+from utils.experiment_config import resolve_config
 from utils.trainer import Trainer, _select_validation_log_metrics
 
 
@@ -350,7 +351,9 @@ class ResearchInvariantTests(unittest.TestCase):
         trainer = ScriptedTrainer(
             model=model,
             sampler=sampler,
-            config={"patience": 1, "valid_metric": "ndcg@10"},
+            config=resolve_config(
+                {"dataset": "ml-100k", "patience": 1, "valid_metric": "ndcg@10"}
+            ),
             device="cpu",
             scripted_weights=[1.0, 2.0, 3.0],
         )

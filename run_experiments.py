@@ -26,7 +26,7 @@ from utils import (
     MixedInBatchTrainer,
 )
 from evaluation import Evaluator, compute_quality_metrics
-from utils.experiment_config import resolve_config
+from utils.experiment_config import COMMON_DEFAULTS, resolve_config
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -41,10 +41,10 @@ def _metric_k(metric_name):
 
 
 def _primary_k(config):
-    valid_metric_k = _metric_k(config.get("valid_metric", ""))
+    valid_metric_k = _metric_k(config["valid_metric"])
     if valid_metric_k is not None:
         return valid_metric_k
-    topk = config.get("topk", [10])
+    topk = config["topk"]
     return 10 if 10 in topk else min(topk)
 
 
@@ -80,16 +80,19 @@ def load_config(config_path):
 
 def prepare_experiment_data(config):
     """Load and precompute dataset objects shared by strategies in one run."""
-    feature_aware = config.get("feature_aware", False)
-    implicit_feedback = config.get("implicit_feedback", False)
+    feature_aware = config["feature_aware"]
+    implicit_feedback = config["implicit_feedback"]
 
     recbole_config, dataset, train_data, valid_data, test_data = load_recbole_dataset(
         config["dataset"],
-        config.get("data_path", "dataset/"),
-        min_rating=config.get("min_rating"),
+        config["data_path"],
+        min_rating=config["min_rating"],
         feature_aware=feature_aware,
         implicit_feedback=implicit_feedback,
         benchmark_filename=config.get("benchmark_filename"),
+        metrics=config["metrics"],
+        topk=config["topk"],
+        valid_metric=config["valid_metric"],
     )
 
     feature_data = None
@@ -122,9 +125,9 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
     print(f"\n{'=' * 60}")
     print(f"Running experiment with {sampling_strategy} sampling")
     print(f"{'=' * 60}")
-    feature_aware = config.get("feature_aware", False)
-    implicit_feedback = config.get("implicit_feedback", False)
-    min_rating = config.get("min_rating")
+    feature_aware = config["feature_aware"]
+    implicit_feedback = config["implicit_feedback"]
+    min_rating = config["min_rating"]
 
     if prepared_data is None:
         print("Loading dataset...")
@@ -166,17 +169,17 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
 
     train_loader = TrainLoader(
         train_interactions,
-        batch_size=config.get("train_batch_size", 1024),
+        batch_size=config["train_batch_size"],
         shuffle=True,
     )
 
     model = TwoTowerModel(
         num_users=num_users,
         num_items=num_items,
-        embedding_size=config.get("embedding_size", 64),
-        hidden_size=config.get("hidden_size", 128),
-        num_layers=config.get("num_layers", 2),
-        dropout=config.get("dropout", 0.1),
+        embedding_size=config["embedding_size"],
+        hidden_size=config["hidden_size"],
+        num_layers=config["num_layers"],
+        dropout=config["dropout"],
         user_feature_schema=(
             feature_data["user"]["schema"] if feature_data is not None else None
         ),
@@ -194,33 +197,31 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
     sampler = get_sampler(
         strategy=sampling_strategy,
         num_items=num_items,
-        num_neg_samples=config.get("num_neg_samples", 4),
+        num_neg_samples=config["num_neg_samples"],
         user_item_dict=user_item_dict,
         item_popularity=item_popularity,
         model=model,
         device=device,
-        candidate_pool_size=config.get("candidate_pool_size", 100),
-        hard_ratio=config.get("hard_neg_ratio", 0.5),
-        dns_temperature=config.get("dns_temperature", 0.1),
-        curriculum_start_ratio=config.get("curriculum_start_ratio", 0.0),
-        curriculum_end_ratio=config.get("curriculum_end_ratio", 0.8),
-        curriculum_warmup_epochs=config.get("curriculum_warmup_epochs", 10),
-        tau_plus=config.get("tau_plus", 0.05),
-        smoothing=config.get("smoothing", 0.75),
-        logq_correction=config.get("logq_correction", False),
-        train_batch_size=config.get("train_batch_size", 1024),
-        mixed_index_batch_size=config.get(
-            "mixed_index_batch_size", config.get("train_batch_size", 1024)
-        ),
+        candidate_pool_size=config["candidate_pool_size"],
+        hard_ratio=config["hard_neg_ratio"],
+        dns_temperature=config["dns_temperature"],
+        curriculum_start_ratio=config["curriculum_start_ratio"],
+        curriculum_end_ratio=config["curriculum_end_ratio"],
+        curriculum_warmup_epochs=config["curriculum_warmup_epochs"],
+        tau_plus=config["tau_plus"],
+        smoothing=config["smoothing"],
+        logq_correction=config["logq_correction"],
+        train_batch_size=config["train_batch_size"],
+        mixed_index_batch_size=config["mixed_index_batch_size"],
     )
     print(f"Resolved sampler: {sampler.name}")
 
     evaluator = Evaluator(
         num_items=num_items,
-        metrics=config.get("metrics", ["Recall", "NDCG", "MRR", "Hit"]),
-        topk=config.get("topk", [5, 10, 20]),
+        metrics=config["metrics"],
+        topk=config["topk"],
         device=device,
-        batch_size=config.get("eval_batch_size", 256),
+        batch_size=config["eval_batch_size"],
     )
 
     if sampler.name == "in_batch":
@@ -239,7 +240,7 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
         train_loader=train_loader,
         valid_loader=valid_data,
         evaluator=evaluator,
-        epochs=config.get("epochs", 50),
+        epochs=config["epochs"],
     )
 
     print("\nFinal Test Evaluation...")
@@ -259,8 +260,8 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
         test_rankings["topk_items"],
         item_popularity=item_popularity,
         num_items=num_items,
-        topk=config.get("topk", [5, 10, 20]),
-        seed=config.get("seed", 42) if seed is None else seed,
+        topk=config["topk"],
+        seed=config["seed"] if seed is None else seed,
     )
 
     print(f"\nTest Results for {sampling_strategy}:")
@@ -310,7 +311,7 @@ def run_all_experiments(config, strategies=None, num_runs=1):
     print(f"Using device: {device}")
 
     # Setup seeds for multiple runs
-    base_seed = config.get("seed", 42)
+    base_seed = config["seed"]
     seeds = [base_seed + i * 1000 for i in range(num_runs)]
 
     all_results = {strategy: [] for strategy in strategies}
@@ -435,8 +436,9 @@ def save_results(all_results, output_dir="results", config=None):
     print("COMPARISON OF NEGATIVE SAMPLING STRATEGIES (summary statistics)")
     print("=" * 100)
 
-    metrics_to_show = _metrics_to_show(config or {})
-    quality_metrics_to_show = _quality_metrics_to_show(config or {})
+    display_config = config or COMMON_DEFAULTS
+    metrics_to_show = _metrics_to_show(display_config)
+    quality_metrics_to_show = _quality_metrics_to_show(display_config)
 
     # Header
     header = f"{'Strategy':<15}"
@@ -466,7 +468,7 @@ def save_results(all_results, output_dir="results", config=None):
 
     if any(stats_data["quality_metrics"] for stats_data in stats_results.values()):
         print("\n" + "=" * 100)
-        print(f"RECOMMENDATION QUALITY METRICS (@{_primary_k(config or {})})")
+        print(f"RECOMMENDATION QUALITY METRICS (@{_primary_k(display_config)})")
         print("=" * 100)
         header = f"{'Strategy':<15}"
         for metric in quality_metrics_to_show:
@@ -507,7 +509,7 @@ def save_results(all_results, output_dir="results", config=None):
                     "epochs_trained": len(r["train_history"].get("train_losses", [])),
                     "early_stopped": (
                         len(r["train_history"].get("train_losses", []))
-                        < config.get("epochs", 50)
+                        < config["epochs"]
                         if config
                         else False
                     ),

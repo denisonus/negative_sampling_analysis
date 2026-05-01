@@ -8,6 +8,8 @@ import torch
 from recbole.config import Config
 from recbole.data import create_dataset, data_preparation
 
+from utils.experiment_config import COMMON_DEFAULTS
+
 try:
     from recbole.utils.enum_type import FeatureType
 except ImportError:  # pragma: no cover - fallback for RecBole API differences
@@ -56,6 +58,9 @@ def load_recbole_dataset(
     feature_aware=False,
     implicit_feedback=False,
     benchmark_filename=None,
+    metrics=None,
+    topk=None,
+    valid_metric=None,
 ):
     """Load dataset using RecBole."""
     config_dict = build_recbole_config_dict(
@@ -65,6 +70,9 @@ def load_recbole_dataset(
         feature_aware=feature_aware,
         implicit_feedback=implicit_feedback,
         benchmark_filename=benchmark_filename,
+        metrics=metrics,
+        topk=topk,
+        valid_metric=valid_metric,
     )
 
     config = Config(model="BPR", dataset=dataset_name, config_dict=config_dict)
@@ -81,8 +89,18 @@ def build_recbole_config_dict(
     feature_aware=False,
     implicit_feedback=False,
     benchmark_filename=None,
+    metrics=None,
+    topk=None,
+    valid_metric=None,
 ):
     """Build RecBole config dict for explicit and implicit-feedback datasets."""
+    if metrics is None:
+        metrics = COMMON_DEFAULTS["metrics"]
+    if topk is None:
+        topk = COMMON_DEFAULTS["topk"]
+    if valid_metric is None:
+        valid_metric = COMMON_DEFAULTS["valid_metric"]
+
     config_dict = {
         "data_path": data_path,
         "USER_ID_FIELD": "user_id",
@@ -98,9 +116,9 @@ def build_recbole_config_dict(
             "order": "RO" if implicit_feedback else "TO",
             "mode": "full",
         },
-        "metrics": ["Recall", "NDCG", "MRR", "Hit"],
-        "topk": [5, 10, 20],
-        "valid_metric": "NDCG@10",
+        "metrics": list(metrics),
+        "topk": list(topk),
+        "valid_metric": valid_metric,
     }
 
     if benchmark_filename is not None:

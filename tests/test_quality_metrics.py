@@ -11,6 +11,7 @@ from analysis import generate_full_report
 from evaluation.evaluator import Evaluator
 from evaluation.quality import compute_quality_metrics
 from run_experiments import compute_statistics, save_results
+from utils.experiment_config import resolve_config
 
 
 class StaticScoreModel(torch.nn.Module):
@@ -198,7 +199,7 @@ class QualityMetricsTests(unittest.TestCase):
             _, run_dir = save_results(
                 all_results,
                 output_dir=tmpdir,
-                config={"epochs": 5, "device": "cpu"},
+                config=resolve_config({"dataset": "ml-100k", "epochs": 5}),
             )
             results_path = Path(run_dir) / "results.json"
             saved = json.loads(results_path.read_text())

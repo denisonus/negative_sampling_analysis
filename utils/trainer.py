@@ -69,8 +69,8 @@ class Trainer:
 
         self.optimizer = optim.AdamW(
             model.parameters(),
-            lr=config.get("learning_rate", 0.001),
-            weight_decay=config.get("weight_decay", 0.0001),
+            lr=config["learning_rate"],
+            weight_decay=config["weight_decay"],
         )
 
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -151,7 +151,7 @@ class Trainer:
         best_metric = 0
         best_epoch = 0
         patience_counter = 0
-        patience = self.config.get("patience", 10)
+        patience = self.config["patience"]
 
         for epoch in range(epochs):
             start_time = time.time()
@@ -170,7 +170,7 @@ class Trainer:
             if valid_loader is not None and evaluator is not None:
                 metrics = evaluator.evaluate(self.model, valid_loader)
 
-                valid_metric_name = self.config.get("valid_metric", "ndcg@10").lower()
+                valid_metric_name = self.config["valid_metric"].lower()
                 valid_metric = metrics.get(valid_metric_name, 0)
                 self.valid_metrics.append({k: float(v) for k, v in metrics.items()})
 
@@ -224,7 +224,7 @@ class InBatchTrainer(Trainer):
 
     def __init__(self, model, sampler, config, device, item_popularity=None):
         super().__init__(model, sampler, config, device)
-        self.logq_correction = config.get("logq_correction", False)
+        self.logq_correction = config["logq_correction"]
         self._log_q = None
         if self.logq_correction and item_popularity is not None:
             import numpy as np

@@ -88,12 +88,17 @@ class GowallaLoaderConfigTests(unittest.TestCase):
             min_rating=resolved["min_rating"],
             implicit_feedback=resolved["implicit_feedback"],
             benchmark_filename=resolved["benchmark_filename"],
+            metrics=resolved["metrics"],
+            topk=resolved["topk"],
+            valid_metric=resolved["valid_metric"],
         )
 
         self.assertEqual(config["load_col"]["inter"], ["user_id", "item_id"])
         self.assertNotIn("val_interval", config)
         self.assertEqual(config["benchmark_filename"], ["train", "valid", "test"])
         self.assertEqual(config["eval_args"]["order"], "RO")
+        self.assertEqual(config["topk"], [20, 50])
+        self.assertEqual(config["valid_metric"], "NDCG@20")
 
 
 if __name__ == "__main__":
