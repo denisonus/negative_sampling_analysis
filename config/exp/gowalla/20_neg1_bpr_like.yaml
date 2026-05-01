@@ -1,0 +1,2 @@
+dataset: gowalla-1m
+num_neg_samples: 1

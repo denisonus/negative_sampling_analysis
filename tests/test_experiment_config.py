@@ -29,6 +29,8 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertTrue(config["implicit_feedback"])
         self.assertIsNone(config["min_rating"])
         self.assertEqual(config["benchmark_filename"], ["train", "valid", "test"])
+        self.assertEqual(config["epochs"], 30)
+        self.assertEqual(config["patience"], 5)
         self.assertEqual(config["topk"], [20, 50])
         self.assertEqual(config["valid_metric"], "NDCG@20")
         self.assertEqual(config["train_batch_size"], 1024)
@@ -70,6 +72,12 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config["dataset"], "gowalla-1m")
         self.assertEqual(config["benchmark_filename"], ["train", "valid", "test"])
         self.assertEqual(config["valid_metric"], "NDCG@20")
+
+    def test_all_experiment_configs_resolve(self):
+        for path in sorted(Path("config/exp").rglob("*.yaml")):
+            with self.subTest(config=str(path)):
+                config = load_config(path)
+                self.assertIn(config["dataset"], {"ml-100k", "gowalla-1m"})
 
     def test_gowalla_reporting_uses_configured_validation_k(self):
         config = resolve_config({"dataset": "gowalla-1m"})

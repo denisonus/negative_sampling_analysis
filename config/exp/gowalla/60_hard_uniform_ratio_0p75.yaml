@@ -1,0 +1,2 @@
+dataset: gowalla-1m
+hard_neg_ratio: 0.75

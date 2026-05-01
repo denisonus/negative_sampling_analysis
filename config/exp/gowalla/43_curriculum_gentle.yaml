@@ -1,0 +1,2 @@
+dataset: gowalla-1m
+curriculum_end_ratio: 0.6
