@@ -3,6 +3,7 @@
 import os
 import sys
 import platform
+import gc
 import yaml
 import json
 import torch
@@ -70,6 +71,16 @@ def set_seed(seed):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def cleanup_device(device):
+    """Release Python references and cached CUDA memory between strategy runs."""
+    gc.collect()
+    if torch.device(device).type == "cuda":
+        try:
+            torch.cuda.empty_cache()
+        except RuntimeError:
+            pass
 
 
 def load_config(config_path):
@@ -148,9 +159,7 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
     num_items = dataset.num(dataset.iid_field)
     num_train = len(train_interactions)
     feedback_label = (
-        "implicit feedback"
-        if implicit_feedback
-        else f"rating >= {min_rating}"
+        "implicit feedback" if implicit_feedback else f"rating >= {min_rating}"
     )
     print(
         f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
@@ -343,6 +352,8 @@ def run_all_experiments(config, strategies=None, num_runs=1):
                 import traceback
 
                 traceback.print_exc()
+            finally:
+                cleanup_device(device)
 
     return all_results
 
@@ -412,7 +423,9 @@ def compute_statistics(all_results):
                 )
 
         for metric, values in quality_values.items():
-            stats_results[strategy]["quality_metrics"][metric] = summarize_values(values)
+            stats_results[strategy]["quality_metrics"][metric] = summarize_values(
+                values
+            )
 
         # Timing statistics
         for timing_key, values in timing_values.items():
@@ -583,7 +596,9 @@ def main():
 
     config = load_config(args.config)
     all_results = run_all_experiments(
-        config, strategies=args.strategies, num_runs=args.num_runs
+        config,
+        strategies=args.strategies,
+        num_runs=args.num_runs,
     )
 
     if all_results:

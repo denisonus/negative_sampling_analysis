@@ -1,6 +1,5 @@
 """Training Loop for Two-Tower Model."""
 
-import copy
 import torch
 import torch.optim as optim
 import time
@@ -50,6 +49,11 @@ def _build_interaction_matrix(user_item_dict, num_items, device):
         .coalesce()
         .to(device)
     )
+
+
+def _state_dict_to_cpu(state_dict):
+    """Clone a model state dict on CPU to avoid holding checkpoint VRAM."""
+    return {key: value.detach().cpu().clone() for key, value in state_dict.items()}
 
 
 class Trainer:
@@ -191,7 +195,7 @@ class Trainer:
                     best_epoch = epoch
                     patience_counter = 0
                     # Save best model
-                    self.best_model_state = copy.deepcopy(self.model.state_dict())
+                    self.best_model_state = _state_dict_to_cpu(self.model.state_dict())
                 else:
                     patience_counter += 1
 
