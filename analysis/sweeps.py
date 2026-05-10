@@ -77,6 +77,15 @@ def _load_sweep_bundles(results_files):
     return bundles
 
 
+def _has_metric_value(strategy_stats, metric):
+    """Return whether a metric exists in any supported stats section."""
+    return (
+        metric in strategy_stats.get("metrics", {})
+        or metric in strategy_stats.get("quality_metrics", {})
+        or metric in strategy_stats.get("timing", {})
+    )
+
+
 def _infer_sweep_param(bundles, param=None):
     """Infer the single varying config parameter across sweep bundles."""
     if not bundles:
@@ -117,6 +126,8 @@ def _collect_sweep_rows_from_bundles(bundles, strategies, metric="ndcg@10", para
         context = _format_context(bundle["config"], context_keys)
         for strategy in strategies:
             if strategy not in stats:
+                continue
+            if not _has_metric_value(stats[strategy], metric):
                 continue
             rows.append(
                 {
@@ -218,6 +229,17 @@ def _write_rows(csv_path, rows):
         writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _unique_legend_entries(axes):
+    """Collect de-duplicated legend entries from one or more axes."""
+    entries = {}
+    for ax in axes:
+        handles, labels = ax.get_legend_handles_labels()
+        for handle, label in zip(handles, labels):
+            if label and not label.startswith("_") and label not in entries:
+                entries[label] = handle
+    return list(entries.values()), list(entries.keys())
 
 
 def plot_parameter_sweep(
@@ -328,11 +350,17 @@ def plot_multi_metric_sweep(
         _format_sweep_axis(ax, x_axis, param, metric, metric)
         csv_rows.extend(rows)
 
-    handles, labels = axes[0].get_legend_handles_labels()
+    handles, labels = _unique_legend_entries(axes)
     if handles:
-        axes[0].legend(handles, labels, loc="best")
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=min(len(labels), max(1, len(strategies))),
+            bbox_to_anchor=(0.5, 0.01),
+        )
     fig.suptitle("Core Metric Sweep Overview")
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0.08, 1, 0.95))
     _finalize_figure(fig, output_path)
     _write_rows(csv_path, csv_rows)
     return csv_rows
