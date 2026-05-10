@@ -1,0 +1,3 @@
+dataset: ml-1m
+mixed_index_batch_size: 4096
+logq_correction: true
