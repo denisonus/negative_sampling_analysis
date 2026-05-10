@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 
 class Tower(nn.Module):
-    """Encoder tower for user or item IDs with optional side features."""
+    """Encoder tower for user or item IDs."""
 
     def __init__(
         self,
@@ -15,38 +15,11 @@ class Tower(nn.Module):
         hidden_size,
         num_layers,
         dropout,
-        feature_schema=None,
-        feature_tensors=None,
     ):
         super().__init__()
         self.embedding = nn.Embedding(input_dim, embedding_size)
-        self.feature_schema = list(feature_schema or [])
-        self.feature_tensors = dict(feature_tensors or {})
 
-        if self.feature_schema and not self.feature_tensors:
-            raise ValueError("Feature schema requires feature tensors")
-
-        self.feature_names = []
-        self.feature_types = {}
-        self.feature_buffer_names = {}
-        self.side_embeddings = nn.ModuleDict()
-
-        for index, spec in enumerate(self.feature_schema):
-            name = spec["name"]
-            if name not in self.feature_tensors:
-                raise ValueError(f"Missing feature tensor for '{name}'")
-
-            tensor = self.feature_tensors[name].long()
-            buffer_name = f"feature_tensor_{index}"
-            self.register_buffer(buffer_name, tensor)
-            self.feature_buffer_names[name] = buffer_name
-            self.feature_names.append(name)
-            self.feature_types[name] = spec["type"]
-            self.side_embeddings[name] = nn.Embedding(
-                spec["num_embeddings"], embedding_size, padding_idx=0
-            )
-
-        input_size = embedding_size * (1 + len(self.feature_names))
+        input_size = embedding_size
         layers = []
         in_size = input_size
         for _ in range(num_layers):
@@ -71,39 +44,14 @@ class Tower(nn.Module):
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
 
-    def _get_feature_tensor(self, name):
-        return getattr(self, self.feature_buffer_names[name])
-
-    @staticmethod
-    def _pool_token_sequence(embeddings, token_ids):
-        mask = token_ids.ne(0).unsqueeze(-1)
-        masked_embeddings = embeddings * mask
-        denom = mask.sum(dim=-2).clamp(min=1).to(embeddings.dtype)
-        return masked_embeddings.sum(dim=-2) / denom
-
-    def _encode_side_feature(self, name, entity_ids):
-        feature_tensor = self._get_feature_tensor(name)
-        feature_values = feature_tensor[entity_ids]
-        feature_embeddings = self.side_embeddings[name](feature_values)
-
-        if self.feature_types[name] == "token":
-            return feature_embeddings
-        if self.feature_types[name] == "token_seq":
-            return self._pool_token_sequence(feature_embeddings, feature_values)
-        raise ValueError(f"Unsupported feature type: {self.feature_types[name]}")
-
     def forward(self, x):
-        parts = [self.embedding(x)]
-        for name in self.feature_names:
-            parts.append(self._encode_side_feature(name, x))
-
-        tower_input = torch.cat(parts, dim=-1)
+        tower_input = self.embedding(x)
         hidden = self.mlp(tower_input) if len(self.mlp) > 0 else tower_input
         return F.normalize(self.output_layer(hidden), p=2, dim=-1)
 
 
 class TwoTowerModel(nn.Module):
-    """Two-Tower Model with optional side-feature aware encoders."""
+    """Two-Tower model with ID-only user and item encoders."""
 
     def __init__(
         self,
@@ -113,10 +61,6 @@ class TwoTowerModel(nn.Module):
         hidden_size=128,
         num_layers=2,
         dropout=0.1,
-        user_feature_schema=None,
-        user_feature_tensors=None,
-        item_feature_schema=None,
-        item_feature_tensors=None,
     ):
         super().__init__()
         self.num_users = num_users
@@ -129,8 +73,6 @@ class TwoTowerModel(nn.Module):
             hidden_size,
             num_layers,
             dropout,
-            feature_schema=user_feature_schema,
-            feature_tensors=user_feature_tensors,
         )
         self.item_tower = Tower(
             num_items,
@@ -138,8 +80,6 @@ class TwoTowerModel(nn.Module):
             hidden_size,
             num_layers,
             dropout,
-            feature_schema=item_feature_schema,
-            feature_tensors=item_feature_tensors,
         )
         self.temperature = nn.Parameter(torch.ones(1) * 0.07)
 

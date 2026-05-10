@@ -7,11 +7,7 @@ import matplotlib.pyplot as plt
 
 from .common import DEFAULT_SWEEP_METRICS
 from .report import generate_full_report
-from .sweeps import (
-    plot_feature_uplift,
-    plot_multi_metric_sweep,
-    save_feature_uplift_table,
-)
+from .sweeps import plot_multi_metric_sweep
 
 
 def main():
@@ -51,19 +47,6 @@ def main():
         param=args.sweep_param,
         output_path=os.path.join(output_dir, "parameter_sweep_core_metrics.png"),
         csv_path=os.path.join(output_dir, "parameter_sweep_core_metrics.csv"),
-    )
-
-    save_feature_uplift_table(
-        args.results_files,
-        os.path.join(output_dir, "feature_uplift.csv"),
-        strategies=strategies,
-        param=args.sweep_param,
-    )
-    plot_feature_uplift(
-        args.results_files,
-        os.path.join(output_dir, "feature_uplift.png"),
-        strategies=strategies,
-        param=args.sweep_param,
     )
 
 

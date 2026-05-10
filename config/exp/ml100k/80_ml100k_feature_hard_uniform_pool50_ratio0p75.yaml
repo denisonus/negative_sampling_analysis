@@ -1,4 +1,0 @@
-dataset: ml-100k
-feature_aware: true
-candidate_pool_size: 50
-hard_neg_ratio: 0.75

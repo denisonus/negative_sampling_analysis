@@ -32,21 +32,14 @@ Promising interaction follow-ups:
 - `ml100k/63_ml100k_hard_uniform_pool50_ratio0p75.yaml`
 - `ml100k/66_ml100k_hard_pool50_neg10.yaml`
 
-Feature-aware comparisons:
-- direct benchmark: `ml100k/75_ml100k_feature_benchmark.yaml`
-- hard-family smaller-pool check: `ml100k/76_ml100k_feature_hard_pool_50.yaml`
-- popularity best-point check: `ml100k/77_ml100k_feature_pop_smoothing_0p50.yaml`
-- in-batch + uniform index sweep: `ml100k/78_ml100k_feature_mns_index_1024.yaml`, `ml100k/79_ml100k_feature_mns_index_2048.yaml`
-- hard-uniform best interaction: `ml100k/80_ml100k_feature_hard_uniform_pool50_ratio0p75.yaml`
-- in-batch + uniform batch interaction: `ml100k/81_ml100k_feature_mns_bs256_index1024.yaml`
-
 ## Gowalla-1M
 
 Location: `config/exp/gowalla/`
 
-The Gowalla suite mirrors the ML-100K decade-based numbering scheme. It uses
-the benchmark split in `dataset/gowalla-1m`, implicit feedback, `topk: [20,
-50]`, `NDCG@20`, 30 epochs, and patience 5 from the `gowalla-1m` profile.
+The Gowalla suite mirrors the ML-100K decade-based numbering scheme. It reads
+raw LightGCN files from `dataset/gowalla-1m/raw-lightgcn`, uses implicit
+feedback, `topk: [20, 50]`, `NDCG@20`, 30 epochs, and patience 5 from the
+`gowalla-1m` profile.
 
 Numbering groups (same logic as ML-100K):
 - `1x` — benchmark

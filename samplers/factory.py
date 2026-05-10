@@ -56,7 +56,7 @@ def get_sampler(
             candidate_pool_size=kwargs.get("candidate_pool_size", 100),
         )
 
-    elif strategy in {"mixed_hard_uniform", "mixed"}:
+    elif strategy == "mixed_hard_uniform":
         return MixedHardUniformNegativeSampler(
             num_items,
             num_neg_samples,

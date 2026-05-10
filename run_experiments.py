@@ -15,8 +15,7 @@ from datetime import datetime
 from models import TwoTowerModel
 from samplers import get_sampler
 from utils import (
-    load_recbole_dataset,
-    extract_feature_data,
+    load_dataset,
     build_user_item_dict_from_train,
     compute_item_popularity_from_train,
     compute_user_interaction_counts_from_train,
@@ -91,35 +90,23 @@ def load_config(config_path):
 
 def prepare_experiment_data(config):
     """Load and precompute dataset objects shared by strategies in one run."""
-    feature_aware = config["feature_aware"]
     implicit_feedback = config["implicit_feedback"]
 
-    recbole_config, dataset, train_data, valid_data, test_data = load_recbole_dataset(
+    dataset, train_data, valid_data, test_data = load_dataset(
         config["dataset"],
         config["data_path"],
         min_rating=config["min_rating"],
-        feature_aware=feature_aware,
-        implicit_feedback=implicit_feedback,
-        benchmark_filename=config.get("benchmark_filename"),
-        metrics=config["metrics"],
-        topk=config["topk"],
-        valid_metric=config["valid_metric"],
+        seed=config["seed"],
     )
-
-    feature_data = None
-    if feature_aware:
-        feature_data = extract_feature_data(dataset, config["dataset"])
 
     num_items = dataset.num(dataset.iid_field)
     train_interactions = get_train_interactions(train_data)
 
     return {
-        "recbole_config": recbole_config,
         "dataset": dataset,
         "train_data": train_data,
         "valid_data": valid_data,
         "test_data": test_data,
-        "feature_data": feature_data,
         "train_interactions": train_interactions,
         "user_item_dict": build_user_item_dict_from_train(train_interactions),
         "item_popularity": compute_item_popularity_from_train(
@@ -136,7 +123,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
     print(f"\n{'=' * 60}")
     print(f"Running experiment with {sampling_strategy} sampling")
     print(f"{'=' * 60}")
-    feature_aware = config["feature_aware"]
     implicit_feedback = config["implicit_feedback"]
     min_rating = config["min_rating"]
 
@@ -149,7 +135,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
     dataset = prepared_data["dataset"]
     valid_data = prepared_data["valid_data"]
     test_data = prepared_data["test_data"]
-    feature_data = prepared_data["feature_data"]
     train_interactions = prepared_data["train_interactions"]
     user_item_dict = prepared_data["user_item_dict"]
     item_popularity = prepared_data["item_popularity"]
@@ -165,14 +150,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
         f"Dataset: {config['dataset']} | Users: {num_users}, Items: {num_items} | "
         f"{feedback_label}"
     )
-    print(f"Feature-aware mode: {'on' if feature_aware else 'off'}")
-    if feature_data is not None:
-        user_feature_names = [spec["name"] for spec in feature_data["user"]["schema"]]
-        item_feature_names = [spec["name"] for spec in feature_data["item"]["schema"]]
-        print(
-            f"User features: {user_feature_names or 'none'} | "
-            f"Item features: {item_feature_names or 'none'}"
-        )
 
     print(f"Training interactions: {num_train}")
 
@@ -189,18 +166,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
         hidden_size=config["hidden_size"],
         num_layers=config["num_layers"],
         dropout=config["dropout"],
-        user_feature_schema=(
-            feature_data["user"]["schema"] if feature_data is not None else None
-        ),
-        user_feature_tensors=(
-            feature_data["user"]["tensors"] if feature_data is not None else None
-        ),
-        item_feature_schema=(
-            feature_data["item"]["schema"] if feature_data is not None else None
-        ),
-        item_feature_tensors=(
-            feature_data["item"]["tensors"] if feature_data is not None else None
-        ),
     )
 
     sampler = get_sampler(
@@ -295,7 +260,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
             "num_users": num_users,
             "num_items": num_items,
             "num_train_interactions": num_train,
-            "feature_aware": feature_aware,
             "implicit_feedback": implicit_feedback,
         },
     }

@@ -21,7 +21,12 @@ Supported strategies:
 
 Supported datasets:
 - `ml-100k`
+- `ml-1m`
 - `gowalla-1m`
+
+MovieLens datasets are read from the official files (`u.data` for ML-100K and
+`ratings.dat` for ML-1M). Gowalla is read from raw LightGCN files under
+`dataset/gowalla-1m/raw-lightgcn`.
 
 Configs are compact: each YAML file declares a dataset and only the values that
 override the code defaults for that dataset.

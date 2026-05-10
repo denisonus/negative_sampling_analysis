@@ -1,4 +1,4 @@
-"""Parameter sweep and feature-uplift analysis."""
+"""Parameter sweep analysis."""
 
 import csv
 import json
@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 
 from .common import (
     DEFAULT_SWEEP_METRICS,
-    FEATURE_UPLIFT_METRICS,
     _finalize_figure,
     _get_metric_value,
     _load_metadata_for_results,
@@ -26,7 +25,7 @@ def _infer_context_keys(bundles, primary_param=None):
     if not bundles:
         return []
 
-    ignored_keys = _sweep_ignored_keys() | {"feature_aware"}
+    ignored_keys = _sweep_ignored_keys()
     if primary_param is not None:
         ignored_keys.add(primary_param)
 
@@ -51,13 +50,11 @@ def _format_context(config, context_keys):
     return ", ".join(f"{key}={config.get(key)}" for key in context_keys)
 
 
-def _line_label(strategy=None, feature_aware=None, context=""):
+def _line_label(strategy=None, context=""):
     """Build a readable legend label for sweep lines."""
     parts = []
     if strategy is not None:
         parts.append(strategy)
-    if feature_aware is not None:
-        parts.append("feat" if feature_aware else "id")
     if context:
         parts.append(context)
     return " | ".join(parts) if parts else "series"
@@ -117,7 +114,6 @@ def _collect_sweep_rows_from_bundles(bundles, strategies, metric="ndcg@10", para
     for bundle in bundles:
         stats = bundle["results"].get("statistics", {})
         param_value = bundle["config"].get(param)
-        feature_aware = bool(bundle["config"].get("feature_aware", False))
         context = _format_context(bundle["config"], context_keys)
         for strategy in strategies:
             if strategy not in stats:
@@ -126,7 +122,6 @@ def _collect_sweep_rows_from_bundles(bundles, strategies, metric="ndcg@10", para
                 {
                     "param": param_value,
                     "strategy": strategy,
-                    "feature_aware": feature_aware,
                     "context": context,
                     "metric_name": metric,
                     "metric_value": _get_metric_value(stats[strategy], metric),
@@ -148,21 +143,18 @@ def _sweep_x_axis(rows):
 
 
 def _sweep_split_flags(rows, param):
-    feature_states = sorted({row["feature_aware"] for row in rows})
     return {
-        "feature": param != "feature_aware" and len(feature_states) > 1,
         "context": any(row["context"] for row in rows),
     }
 
 
 def _group_sweep_rows(rows, split_flags):
-    if not split_flags["feature"] and not split_flags["context"]:
+    if not split_flags["context"]:
         return {(None, ""): rows}
 
     grouped_rows = {}
     for row in rows:
         group_key = (
-            row["feature_aware"] if split_flags["feature"] else None,
             row["context"] if split_flags["context"] else "",
         )
         grouped_rows.setdefault(group_key, []).append(row)
@@ -185,17 +177,14 @@ def _draw_sweep_lines(ax, rows, strategies, value_to_pos, param, include_strateg
             ys = [row["metric_value"] for row in group_rows]
             label = _line_label(
                 strategy=strategy if include_strategy else None,
-                feature_aware=group_key[0] if split_flags["feature"] else None,
-                context=group_key[1] if split_flags["context"] else "",
+                context=group_key[0] if split_flags["context"] else "",
             )
-            line_style = "--" if group_key[0] else "-"
             ax.plot(
                 xs,
                 ys,
                 marker="o",
                 linewidth=2,
                 color=color,
-                linestyle=line_style,
                 label=label if label != "series" else None,
             )
             legend_needed = legend_needed or label != "series"
@@ -347,169 +336,5 @@ def plot_multi_metric_sweep(
     _finalize_figure(fig, output_path)
     _write_rows(csv_path, csv_rows)
     return csv_rows
-
-
-def build_feature_uplift_rows(results_files, strategies=None, param=None):
-    """Build paired id-only vs feature-aware comparison rows."""
-    bundles = _load_sweep_bundles(results_files)
-    if not bundles:
-        return None, None
-
-    param = _infer_sweep_param(bundles, param=param)
-    context_keys = _infer_context_keys(bundles, primary_param=param)
-
-    base_rows = []
-    for bundle in bundles:
-        stats = bundle["results"].get("statistics", {})
-        available_strategies = strategies or sorted(stats.keys())
-        feature_aware = bool(bundle["config"].get("feature_aware", False))
-        param_value = bundle["config"].get(param)
-        context = _format_context(bundle["config"], context_keys)
-        for strategy in available_strategies:
-            if strategy not in stats:
-                continue
-            strategy_stats = stats[strategy]
-            row = {
-                "strategy": strategy,
-                "sweep_param": param,
-                "sweep_value": param_value,
-                "context": context,
-                "feature_aware": feature_aware,
-                "results_file": bundle["results_file"],
-            }
-            for metric in FEATURE_UPLIFT_METRICS:
-                if metric in strategy_stats.get("metrics", {}):
-                    row[metric] = _get_metric_value(strategy_stats, metric)
-            row["item_coverage@10"] = _get_metric_value(strategy_stats, "item_coverage@10")
-            row["novelty@10"] = _get_metric_value(strategy_stats, "novelty@10")
-            row["total_time"] = _get_metric_value(strategy_stats, "total_time")
-            base_rows.append(row)
-
-    if not base_rows:
-        return None, param
-
-    if len({row["feature_aware"] for row in base_rows}) < 2:
-        return None, param
-
-    grouped = {}
-    for row in base_rows:
-        pair_key = (
-            row["strategy"],
-            row["context"],
-            None if param == "feature_aware" else row["sweep_value"],
-        )
-        grouped.setdefault(pair_key, {})[row["feature_aware"]] = row
-
-    uplift_rows = []
-    for (strategy, context, sweep_value), pair in grouped.items():
-        if False not in pair or True not in pair:
-            continue
-        id_row = pair[False]
-        feature_row = pair[True]
-        uplift_rows.append(
-            {
-                "strategy": strategy,
-                "sweep_param": param,
-                "sweep_value": sweep_value,
-                "context": context,
-                "id_item_coverage@10": id_row["item_coverage@10"],
-                "feature_item_coverage@10": feature_row["item_coverage@10"],
-                "delta_item_coverage@10": feature_row["item_coverage@10"]
-                - id_row["item_coverage@10"],
-                "id_novelty@10": id_row["novelty@10"],
-                "feature_novelty@10": feature_row["novelty@10"],
-                "delta_novelty@10": feature_row["novelty@10"] - id_row["novelty@10"],
-                "id_total_time": id_row["total_time"],
-                "feature_total_time": feature_row["total_time"],
-                "delta_total_time": feature_row["total_time"] - id_row["total_time"],
-            }
-        )
-        for metric in FEATURE_UPLIFT_METRICS:
-            if metric not in id_row or metric not in feature_row:
-                continue
-            uplift_rows[-1][f"id_{metric}"] = id_row[metric]
-            uplift_rows[-1][f"feature_{metric}"] = feature_row[metric]
-            uplift_rows[-1][f"delta_{metric}"] = feature_row[metric] - id_row[metric]
-
-    if not uplift_rows:
-        return None, param
-
-    uplift_rows.sort(
-        key=lambda row: (
-            row["strategy"],
-            _sort_param_value(row["sweep_value"]),
-            row["context"],
-        )
-    )
-    return uplift_rows, param
-
-
-def save_feature_uplift_table(results_files, output_path, strategies=None, param=None):
-    """Persist paired feature-aware uplift statistics across runs."""
-    rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
-    if not rows:
-        return None
-
-    with open(output_path, "w", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    return rows
-
-
-def _feature_uplift_label(row):
-    """Build a compact x-axis label for feature uplift plots."""
-    label = row["strategy"]
-    if row.get("sweep_value") is not None:
-        label += f"\n{row['sweep_param']}={row['sweep_value']}"
-    if row.get("context"):
-        label += f"\n{row['context']}"
-    return label
-
-
-def plot_feature_uplift(results_files, output_path, strategies=None, param=None):
-    """Plot feature-aware uplift across the core relevance metrics."""
-    rows, _ = build_feature_uplift_rows(results_files, strategies=strategies, param=param)
-    if not rows:
-        return None
-
-    labels = [_feature_uplift_label(row) for row in rows]
-    x = np.arange(len(rows))
-    delta_metrics = [
-        metric
-        for metric in [
-            "delta_ndcg@10",
-            "delta_recall@10",
-            "delta_recall@20",
-            "delta_mrr@10",
-        ]
-        if any(metric in row for row in rows)
-    ]
-    width = 0.8 / max(len(delta_metrics), 1)
-
-    fig, ax = plt.subplots(figsize=(max(9, len(rows) * 1.4), 6))
-    colors = plt.colormaps["Set2"](np.linspace(0, 1, len(delta_metrics)))
-    for idx, metric in enumerate(delta_metrics):
-        values = [row[metric] for row in rows]
-        offset = (idx - len(delta_metrics) / 2 + 0.5) * width
-        ax.bar(
-            x + offset,
-            values,
-            width,
-            label=metric,
-            color=colors[idx],
-        )
-    ax.axhline(0.0, color="black", linewidth=1)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=45, ha="right")
-    ax.set_ylabel("Feature-aware delta")
-    ax.set_title("Feature-aware uplift by strategy")
-    ax.legend(loc="best")
-    ax.grid(True, axis="y", alpha=0.2)
-
-    plt.tight_layout()
-    _finalize_figure(fig, output_path)
-    return rows
-
 
 

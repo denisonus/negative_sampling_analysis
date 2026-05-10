@@ -75,6 +75,3 @@ class MixedHardUniformNegativeSampler(NegativeSampler):
 
         return torch.from_numpy(deduped).to(self.device)
 
-
-# Backward-compatible alias for older imports/configs.
-MixedNegativeSampler = MixedHardUniformNegativeSampler

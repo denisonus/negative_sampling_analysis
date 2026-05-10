@@ -1,12 +1,11 @@
-"""Prepare the LightGCN Gowalla split as a RecBole benchmark dataset.
+"""Prepare raw LightGCN Gowalla files for local experiments.
 
 The source files use one row per user:
 
     user_id item_id item_id ...
 
 This script merges LightGCN's published train/test interactions, creates a
-deterministic project-local train/valid/test split, and writes RecBole atomic
-``.inter`` files.
+deterministic project-local train/valid/test split, and reports split counts.
 """
 
 from __future__ import annotations
@@ -27,8 +26,6 @@ SOURCE_URLS = {
     "user_list.txt": "https://raw.githubusercontent.com/kuandeng/LightGCN/master/Data/gowalla/user_list.txt",
     "item_list.txt": "https://raw.githubusercontent.com/kuandeng/LightGCN/master/Data/gowalla/item_list.txt",
 }
-
-INTER_HEADER = "user_id:token\titem_id:token\n"
 
 
 def download_sources(raw_dir: Path, force: bool = False) -> None:
@@ -69,7 +66,7 @@ def parse_lightgcn_interactions(path: Path) -> dict[int, list[int]]:
 def merge_user_interactions(
     sources: Iterable[dict[int, list[int]]],
 ) -> dict[int, list[int]]:
-    """Merge multiple user->items mappings while preserving first-seen item order."""
+    """Merge multiple user->items dictionaries while preserving first-seen item order."""
     merged = defaultdict(list)
     seen_by_user: dict[int, set[int]] = defaultdict(set)
 
@@ -142,17 +139,6 @@ def split_interactions(
     return rows
 
 
-def write_recbole_inter(path: Path, rows: Iterable[tuple[int, int]]) -> int:
-    """Write RecBole interaction rows and return row count."""
-    count = 0
-    with path.open("w", encoding="utf-8", newline="\n") as file:
-        file.write(INTER_HEADER)
-        for user_id, item_id in rows:
-            file.write(f"{user_id}\t{item_id}\n")
-            count += 1
-    return count
-
-
 def validate_split(rows_by_split: dict[str, list[tuple[int, int]]]) -> None:
     """Validate that generated split rows do not overlap."""
     seen: dict[tuple[int, int], str] = {}
@@ -172,7 +158,7 @@ def prepare_gowalla(
     split: tuple[float, float, float],
     force_download: bool = False,
 ) -> dict[str, int]:
-    """Download, split, validate, and write the Gowalla RecBole dataset."""
+    """Download, split, validate, and summarize the Gowalla dataset."""
     if len(split) != 3:
         raise ValueError("split must contain train, valid, and test ratios")
     if any(ratio < 0 for ratio in split):
@@ -180,7 +166,6 @@ def prepare_gowalla(
     if abs(sum(split) - 1.0) > 1e-8:
         raise ValueError("split ratios must sum to 1.0")
 
-    output.mkdir(parents=True, exist_ok=True)
     raw_dir = output / "raw-lightgcn"
     download_sources(raw_dir, force=force_download)
 
@@ -190,7 +175,6 @@ def prepare_gowalla(
     rows_by_split = split_interactions(interactions, split=split, seed=seed)
     validate_split(rows_by_split)
 
-    dataset_name = output.name
     counts = {
         "users": len(interactions),
         "items": len({item_id for items in interactions.values() for item_id in items}),
@@ -198,18 +182,14 @@ def prepare_gowalla(
     }
 
     for split_name, rows in rows_by_split.items():
-        count = write_recbole_inter(
-            output / f"{dataset_name}.{split_name}.inter",
-            rows,
-        )
-        counts[f"{split_name}_interactions"] = count
+        counts[f"{split_name}_interactions"] = len(rows)
 
     return counts
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare LightGCN Gowalla as a RecBole benchmark dataset."
+        description="Download and validate raw LightGCN Gowalla data."
     )
     parser.add_argument(
         "--output",

@@ -29,8 +29,7 @@ DEFAULT_QUALITY_METRICS = [
     "personalization@10",
     "personalization@20",
 ]
-SUMMARY_OPTIONAL_RELEVANCE_METRICS = ["precision@10", "map@10"]
-FEATURE_UPLIFT_METRICS = ["ndcg@10", "recall@10", "recall@20", "mrr@10"]
+SUMMARY_OPTIONAL_RELEVANCE_METRICS = []
 
 def load_results(results_file):
     with open(results_file, "r") as f:
@@ -172,25 +171,9 @@ def _available_bucket_metrics(stats_data, candidates):
     ]
 
 
-def _feature_aware_from_metadata(metadata):
-    """Extract feature-aware flag from sibling metadata when available."""
-    if not metadata:
-        return None
-    config = metadata.get("config", {})
-    if "feature_aware" in config:
-        return bool(config["feature_aware"])
-    dataset_stats = metadata.get("dataset_stats", {})
-    if "feature_aware" in dataset_stats:
-        return bool(dataset_stats["feature_aware"])
-    return None
-
-
 def _title_suffix_from_metadata(metadata):
     """Build a concise title suffix for per-run reports."""
-    feature_aware = _feature_aware_from_metadata(metadata)
-    if feature_aware is None:
-        return ""
-    return " [feature-aware]" if feature_aware else " [id-only]"
+    return ""
 
 
 

@@ -13,7 +13,6 @@ from .common import (
     _available_bucket_metrics,
     _available_metrics,
     _collect_bucket_labels,
-    _feature_aware_from_metadata,
     _get_metric_value,
     _relative_improvement,
     _sorted_strategies,
@@ -63,7 +62,6 @@ def save_summary_table(results, output_path, metadata=None):
     stats_data = results["statistics"]
     strategies = _sorted_strategies(stats_data)
     rows = []
-    feature_aware = _feature_aware_from_metadata(metadata)
     relevance_metrics = _available_metrics(
         stats_data,
         [
@@ -107,7 +105,6 @@ def save_summary_table(results, output_path, metadata=None):
         row["sampling_time"] = sampling_time
         row["training_time"] = strategy_stats["timing"]["training_time"]["mean"]
         row["sampling_share"] = (sampling_time / total_time) if total_time > 0 else 0.0
-        row["feature_aware"] = feature_aware
         rows.append(row)
 
     if not rows:
@@ -155,7 +152,6 @@ def build_relative_improvement_rows(
         return []
 
     rows = []
-    feature_aware = _feature_aware_from_metadata(metadata)
     strategies = [
         strategy
         for strategy in _sorted_strategies(stats_data)
@@ -187,7 +183,6 @@ def build_relative_improvement_rows(
                     "relative_improvement_percent": (
                         None if relative_value is None else relative_value * 100
                     ),
-                    "feature_aware": feature_aware,
                 }
             )
 

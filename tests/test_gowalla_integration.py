@@ -1,15 +1,10 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 from scripts.prepare_gowalla_lightgcn import (
-    INTER_HEADER,
     merge_user_interactions,
     split_interactions,
     validate_split,
-    write_recbole_inter,
 )
-from utils.data_utils import build_recbole_config_dict
 from utils.experiment_config import resolve_config
 
 
@@ -51,54 +46,14 @@ class GowallaConverterTests(unittest.TestCase):
                 self.assertGreaterEqual(len(by_user["train"].get(user_id, set())), 1)
                 self.assertGreaterEqual(len(by_user["test"].get(user_id, set())), 1)
 
-    def test_recbole_inter_writer_uses_expected_header(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "gowalla-1m.train.inter"
-            count = write_recbole_inter(path, [(3, 10), (4, 11)])
-
-            self.assertEqual(count, 2)
-            self.assertEqual(
-                path.read_text(encoding="utf-8").splitlines(),
-                [INTER_HEADER.strip(), "3\t10", "4\t11"],
-            )
-
-
 class GowallaLoaderConfigTests(unittest.TestCase):
-    def test_explicit_movielens_config_keeps_rating_filter(self):
-        config = build_recbole_config_dict(
-            "ml-100k",
-            data_path="dataset/",
-            min_rating=4,
-            feature_aware=False,
-        )
-
-        self.assertEqual(
-            config["load_col"]["inter"],
-            ["user_id", "item_id", "rating", "timestamp"],
-        )
-        self.assertEqual(config["val_interval"], {"rating": "[4,inf)"})
-        self.assertNotIn("benchmark_filename", config)
-        self.assertEqual(config["eval_args"]["order"], "TO")
-
-    def test_implicit_gowalla_config_uses_benchmark_files(self):
+    def test_gowalla_config_uses_raw_lightgcn_inputs(self):
         resolved = resolve_config({"dataset": "gowalla-1m"})
-        config = build_recbole_config_dict(
-            resolved["dataset"],
-            data_path=resolved["data_path"],
-            min_rating=resolved["min_rating"],
-            implicit_feedback=resolved["implicit_feedback"],
-            benchmark_filename=resolved["benchmark_filename"],
-            metrics=resolved["metrics"],
-            topk=resolved["topk"],
-            valid_metric=resolved["valid_metric"],
-        )
 
-        self.assertEqual(config["load_col"]["inter"], ["user_id", "item_id"])
-        self.assertNotIn("val_interval", config)
-        self.assertEqual(config["benchmark_filename"], ["train", "valid", "test"])
-        self.assertEqual(config["eval_args"]["order"], "RO")
-        self.assertEqual(config["topk"], [20, 50])
-        self.assertEqual(config["valid_metric"], "NDCG@20")
+        self.assertTrue(resolved["implicit_feedback"])
+        self.assertIsNone(resolved["min_rating"])
+        self.assertEqual(resolved["topk"], [20, 50])
+        self.assertEqual(resolved["valid_metric"], "NDCG@20")
 
 
 if __name__ == "__main__":

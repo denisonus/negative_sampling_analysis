@@ -13,7 +13,6 @@ COMMON_DEFAULTS = {
     "hidden_size": 128,
     "num_layers": 2,
     "dropout": 0.1,
-    "feature_aware": False,
     "epochs": 50,
     "train_batch_size": 512,
     "learning_rate": 0.0003,
@@ -60,7 +59,6 @@ DATASET_PRESETS = {
     },
     "gowalla-1m": {
         "implicit_feedback": True,
-        "benchmark_filename": ["train", "valid", "test"],
         "min_rating": None,
         "epochs": 30,
         "train_batch_size": 1024,
@@ -90,7 +88,7 @@ def resolve_config(raw_config: dict[str, Any] | None) -> dict[str, Any]:
     if raw_config is None:
         raw_config = {}
     if not isinstance(raw_config, dict):
-        raise ValueError("Config must be a YAML mapping")
+        raise ValueError("Config must be a YAML object")
 
     unknown_keys = sorted(set(raw_config) - ALLOWED_CONFIG_KEYS)
     if unknown_keys:

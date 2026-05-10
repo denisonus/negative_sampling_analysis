@@ -6,9 +6,6 @@ scipy>=1.7.0
 pandas>=1.3.0
 scikit-learn>=1.0.0
 
-# RecBole framework for data loading and evaluation
-recbole>=1.2.1
-
 # Configuration
 pyyaml>=6.0
 

@@ -209,14 +209,14 @@ def plot_ablation_delta(
 
 
 
-def plot_user_bucket_delta_heatmap(
+def plot_user_bucket_delta_grid(
     results,
     baseline="uniform",
     metric="ndcg@10",
     output_path=None,
     title_suffix="",
 ):
-    """Plot a compact heatmap of per-bucket deltas versus a baseline strategy."""
+    """Plot a compact grid of per-bucket deltas versus a baseline strategy."""
     stats_data = results["statistics"]
     if baseline not in stats_data:
         return None
@@ -256,8 +256,8 @@ def plot_user_bucket_delta_heatmap(
     if not delta_rows:
         return None
 
-    heatmap = np.asarray(delta_rows, dtype=np.float64)
-    finite_values = heatmap[np.isfinite(heatmap)]
+    grid = np.asarray(delta_rows, dtype=np.float64)
+    finite_values = grid[np.isfinite(grid)]
     if finite_values.size == 0:
         return None
 
@@ -273,7 +273,7 @@ def plot_user_bucket_delta_heatmap(
         cmap = cmap.copy()
     cmap.set_bad(color="lightgray")
     image = ax.imshow(
-        np.ma.masked_invalid(heatmap),
+        np.ma.masked_invalid(grid),
         cmap=cmap,
         vmin=-max_abs,
         vmax=max_abs,
@@ -287,9 +287,9 @@ def plot_user_bucket_delta_heatmap(
     ax.set_xlabel("Train interactions")
     ax.set_title(f"{metric.upper()} Delta vs {baseline}{title_suffix}")
 
-    for row_idx in range(heatmap.shape[0]):
-        for col_idx in range(heatmap.shape[1]):
-            value = heatmap[row_idx, col_idx]
+    for row_idx in range(grid.shape[0]):
+        for col_idx in range(grid.shape[1]):
+            value = grid[row_idx, col_idx]
             if np.isnan(value):
                 ax.text(col_idx, row_idx, "NA", ha="center", va="center", fontsize=8)
                 continue
@@ -307,7 +307,7 @@ def plot_user_bucket_delta_heatmap(
     fig.colorbar(image, ax=ax, shrink=0.85, label="Delta")
     plt.tight_layout()
     _finalize_figure(fig, output_path)
-    return heatmap
+    return grid
 
 
 def _extract_valid_series(valid_history, metric="ndcg@10"):

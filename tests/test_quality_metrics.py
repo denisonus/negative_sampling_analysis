@@ -294,7 +294,7 @@ class QualityMetricsTests(unittest.TestCase):
             results_path = run_dir / "results.json"
             metadata_path = run_dir / "metadata.json"
             results_path.write_text(json.dumps(results))
-            metadata_path.write_text(json.dumps({"config": {"feature_aware": False}}))
+            metadata_path.write_text(json.dumps({"config": {}}))
 
             generate_full_report(str(results_path), output_dir=str(output_dir))
 
@@ -305,7 +305,7 @@ class QualityMetricsTests(unittest.TestCase):
                 "metric_by_k.png",
                 "quality_metrics.png",
                 "user_bucket_metrics.csv",
-                "user_bucket_ndcg10_delta_heatmap.png",
+                "user_bucket_ndcg10_delta_grid.png",
                 "ndcg10_delta_vs_uniform.png",
                 "training_dynamics.png",
                 "significance_ndcg10.csv",
@@ -318,7 +318,6 @@ class QualityMetricsTests(unittest.TestCase):
                 "competitive_quality.png",
                 "competitive_summary.csv",
                 "user_bucket_metrics.png",
-                "feature_quality_tradeoff.png",
             ]
 
             for filename in expected_files:

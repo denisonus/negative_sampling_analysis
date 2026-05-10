@@ -329,17 +329,6 @@ class ResearchInvariantTests(unittest.TestCase):
             self.assertGreater(np.mean(counts), 0.35)
             self.assertLess(np.mean(counts), 0.65)
 
-    def test_legacy_mixed_alias_maps_to_hard_uniform_variant(self):
-        sampler = get_sampler(
-            "mixed",
-            num_items=self.num_items,
-            num_neg_samples=self.num_neg_samples,
-            user_item_dict=self.user_item_dict,
-            model=self._build_model(),
-        )
-
-        self.assertEqual(sampler.name, "mixed_hard_uniform")
-
     def test_trainer_restores_best_checkpoint_after_early_stopping(self):
         model = torch.nn.Linear(1, 1, bias=False)
         sampler = get_sampler(

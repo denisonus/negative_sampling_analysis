@@ -1,37 +1,54 @@
-"""Evaluation Utilities using RecBole metrics."""
+"""Evaluation utilities for top-k recommendation metrics."""
 
 import numpy as np
 
 import torch
 from collections import defaultdict
-from recbole.evaluator.metrics import Hit, Recall, NDCG, MRR, Precision, MAP
 
 from utils.experiment_config import COMMON_DEFAULTS
 
-if not hasattr(np, "float"):  # pragma: no cover - RecBole still references np.float
-    setattr(np, "float", float)
+
+def _hit(pos_index, pos_len=None):
+    return (np.cumsum(pos_index, axis=1) > 0).astype(np.float64)
 
 
-class MockConfig:
-    """Mock config object for RecBole metrics."""
+def _mrr(pos_index, pos_len=None):
+    first_hit = pos_index.argmax(axis=1)
+    result = np.zeros_like(pos_index, dtype=np.float64)
+    for row, idx in enumerate(first_hit):
+        if pos_index[row, idx]:
+            result[row, idx:] = 1.0 / (idx + 1)
+    return result
 
-    def __init__(self, topk):
-        self._config = {"topk": topk, "metric_decimal_place": 4}
 
-    def __getitem__(self, key):
-        return self._config.get(key)
+def _recall(pos_index, pos_len):
+    return np.cumsum(pos_index, axis=1) / pos_len.reshape(-1, 1)
+
+
+def _ndcg(pos_index, pos_len):
+    ranks = np.arange(1, pos_index.shape[1] + 1, dtype=np.float64)
+    discounts = 1.0 / np.log2(ranks + 1)
+    dcg = np.cumsum(np.where(pos_index, discounts, 0.0), axis=1)
+
+    idcg = np.cumsum(np.broadcast_to(discounts, pos_index.shape), axis=1)
+    idcg_len = np.minimum(pos_len, pos_index.shape[1])
+    for row, length in enumerate(idcg_len):
+        if length <= 0:
+            idcg[row] = 1.0
+        elif length < pos_index.shape[1]:
+            idcg[row, length:] = idcg[row, length - 1]
+
+    return dcg / idcg
 
 
 class Evaluator:
-    """Evaluator for recommendation models using RecBole's standard metrics."""
+    """Evaluator for recommendation models using local top-k metrics."""
 
-    METRIC_CLASSES = {
-        "hit": Hit,
-        "recall": Recall,
-        "ndcg": NDCG,
-        "mrr": MRR,
-        "precision": Precision,
-        "map": MAP,
+    METRIC_FUNCTIONS = {
+        "hit": _hit,
+        "recall": _recall,
+        "ndcg": _ndcg,
+        "mrr": _mrr,
     }
     ACTIVITY_BUCKET_ORDER = ("0", "1-5", "6-20", "21+")
 
@@ -50,17 +67,13 @@ class Evaluator:
 
         self.num_items = num_items
         self.metrics = [m.lower() for m in metrics]
+        unsupported_metrics = sorted(set(self.metrics) - set(self.METRIC_FUNCTIONS))
+        if unsupported_metrics:
+            raise ValueError(f"Unsupported metric(s): {', '.join(unsupported_metrics)}")
         self.topk = list(topk)
         self.max_k = max(self.topk)
         self.device = device
         self.batch_size = max(int(batch_size), 1)
-
-        mock_config = MockConfig(self.topk)
-        self.metric_instances = {
-            name: self.METRIC_CLASSES[name](mock_config)
-            for name in self.metrics
-            if name in self.METRIC_CLASSES
-        }
 
     def _empty_results(self):
         return {f"{m}@{k}": 0.0 for m in self.metrics for k in self.topk}
@@ -72,12 +85,6 @@ class Evaluator:
             "pos_index": np.empty((0, self.max_k), dtype=bool),
             "pos_len": np.array([], dtype=np.int64),
         }
-
-    def _get_metric_instance(self, metric_name):
-        metric_name = metric_name.lower()
-        if metric_name in self.metric_instances:
-            return self.metric_instances[metric_name]
-        return self.METRIC_CLASSES[metric_name](MockConfig(self.topk))
 
     @classmethod
     def _activity_bucket_label(cls, interaction_count):
@@ -103,11 +110,7 @@ class Evaluator:
         if pos_index.size == 0:
             return np.empty((0, self.max_k), dtype=np.float64)
 
-        metric_instance = self._get_metric_instance(metric_name)
-        if metric_name in ["recall", "ndcg", "map"]:
-            metric_values = metric_instance.metric_info(pos_index, pos_len)
-        else:
-            metric_values = metric_instance.metric_info(pos_index)
+        metric_values = self.METRIC_FUNCTIONS[metric_name](pos_index, pos_len)
 
         return np.asarray(metric_values, dtype=np.float64)
 
@@ -208,11 +211,8 @@ class Evaluator:
             return self._empty_results()
 
         results = {}
-        for metric_name, metric_instance in self.metric_instances.items():
-            if metric_name in ["recall", "ndcg", "map"]:
-                metric_values = metric_instance.metric_info(pos_index, pos_len)
-            else:
-                metric_values = metric_instance.metric_info(pos_index)
+        for metric_name in self.metrics:
+            metric_values = self.METRIC_FUNCTIONS[metric_name](pos_index, pos_len)
 
             avg_values = metric_values.mean(axis=0)
             for k in self.topk:

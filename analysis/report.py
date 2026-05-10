@@ -17,7 +17,7 @@ from .plots import (
     plot_quality_small_multiples,
     plot_thesis_dashboard,
     plot_training_dynamics,
-    plot_user_bucket_delta_heatmap,
+    plot_user_bucket_delta_grid,
 )
 from .tables import (
     save_relative_improvement_table,
@@ -80,12 +80,12 @@ def generate_full_report(results_file, output_dir=None):
         save_user_bucket_metrics_table(
             results, os.path.join(output_dir, "user_bucket_metrics.csv")
         )
-        plot_user_bucket_delta_heatmap(
+        plot_user_bucket_delta_grid(
             results,
             baseline="uniform",
             metric=primary_metric,
             output_path=os.path.join(
-                output_dir, f"user_bucket_{primary_metric_file_label}_delta_heatmap.png"
+                output_dir, f"user_bucket_{primary_metric_file_label}_delta_grid.png"
             ),
             title_suffix=title_suffix,
         )
