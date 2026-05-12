@@ -9,7 +9,6 @@ from run_experiments import set_seed
 from samplers import get_sampler
 from samplers.base import SamplingResult
 from samplers.curriculum import CurriculumNegativeSampler
-from samplers.debiased import DebiasedNegativeSampler
 from samplers.dns import DNSNegativeSampler
 from samplers.hard import HardNegativeSampler
 from samplers.mixed import MixedHardUniformNegativeSampler
@@ -123,7 +122,6 @@ class ResearchInvariantTests(unittest.TestCase):
             "mixed_hard_uniform",
             "dns",
             "curriculum",
-            "debiased",
         ]
         model = self._build_model()
 
@@ -142,7 +140,6 @@ class ResearchInvariantTests(unittest.TestCase):
                     curriculum_start_ratio=0.0,
                     curriculum_end_ratio=0.75,
                     curriculum_warmup_epochs=5,
-                    tau_plus=0.15,
                 )
                 if hasattr(sampler, "set_epoch"):
                     sampler.set_epoch(2)
@@ -169,7 +166,6 @@ class ResearchInvariantTests(unittest.TestCase):
             "mixed_hard_uniform",
             "dns",
             "curriculum",
-            "debiased",
         ]
         model = self._build_model()
 
@@ -187,7 +183,6 @@ class ResearchInvariantTests(unittest.TestCase):
                     curriculum_start_ratio=0.0,
                     curriculum_end_ratio=0.75,
                     curriculum_warmup_epochs=5,
-                    tau_plus=0.15,
                 )
                 if hasattr(sampler, "set_epoch"):
                     sampler.set_epoch(2)
@@ -252,16 +247,6 @@ class ResearchInvariantTests(unittest.TestCase):
                 curriculum_warmup_epochs=7,
             ),
         )
-        debiased = cast(
-            DebiasedNegativeSampler,
-            get_sampler(
-                "debiased",
-                num_items=self.num_items,
-                num_neg_samples=self.num_neg_samples,
-                user_item_dict=self.user_item_dict,
-                tau_plus=0.2,
-            ),
-        )
         mixed_in_batch_uniform = cast(
             MixedInBatchUniformNegativeSampler,
             get_sampler(
@@ -281,7 +266,6 @@ class ResearchInvariantTests(unittest.TestCase):
         self.assertAlmostEqual(curriculum.start_hard_ratio, 0.1)
         self.assertAlmostEqual(curriculum.end_hard_ratio, 0.9)
         self.assertEqual(curriculum.warmup_epochs, 7)
-        self.assertAlmostEqual(debiased.tau_plus, 0.2)
         self.assertEqual(mixed_in_batch_uniform.name, "mixed_in_batch_uniform")
         self.assertEqual(mixed_in_batch_uniform.index_batch_size, 32)
 

@@ -12,7 +12,6 @@ from .in_batch import InBatchNegativeSampler
 from .mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 from .dns import DNSNegativeSampler
 from .curriculum import CurriculumNegativeSampler
-from .debiased import DebiasedNegativeSampler
 
 
 def get_sampler(
@@ -105,15 +104,6 @@ def get_sampler(
             start_hard_ratio=kwargs.get("curriculum_start_ratio", 0.0),
             end_hard_ratio=kwargs.get("curriculum_end_ratio", 0.8),
             warmup_epochs=kwargs.get("curriculum_warmup_epochs", 10),
-        )
-
-    elif strategy == "debiased":
-        return DebiasedNegativeSampler(
-            num_items,
-            num_neg_samples,
-            user_item_dict,
-            device,
-            tau_plus=kwargs.get("tau_plus", 0.05),
         )
 
     else:

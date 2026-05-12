@@ -185,7 +185,6 @@ def run_experiment(config, sampling_strategy, device, seed=None, prepared_data=N
         curriculum_start_ratio=config["curriculum_start_ratio"],
         curriculum_end_ratio=config["curriculum_end_ratio"],
         curriculum_warmup_epochs=config["curriculum_warmup_epochs"],
-        tau_plus=config["tau_plus"],
         smoothing=config["smoothing"],
         logq_correction=config["logq_correction"],
         train_batch_size=config["train_batch_size"],
@@ -280,7 +279,6 @@ def run_all_experiments(config, strategies=None, num_runs=1):
             "in_batch",
             "dns",
             "curriculum",
-            "debiased",
         ]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

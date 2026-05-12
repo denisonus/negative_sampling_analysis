@@ -8,7 +8,6 @@ from typing import Any, Union
 from tqdm import tqdm
 
 from samplers.base import SamplingResult
-from samplers.debiased import DebiasedNegativeSampler
 from samplers.mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 
 
@@ -126,13 +125,8 @@ class Trainer:
             train_start = time.time()
             self.optimizer.zero_grad(set_to_none=True)
 
-            # Pass extra kwargs for specialized samplers
-            extra_kwargs = {}
-            if isinstance(self.sampler, DebiasedNegativeSampler):
-                extra_kwargs["tau_plus"] = self.sampler.last_tau_plus
-
             loss = self.model.compute_loss(
-                user_ids, pos_item_ids, neg_item_ids, neg_log_probs, **extra_kwargs
+                user_ids, pos_item_ids, neg_item_ids, neg_log_probs
             )
 
             loss.backward()

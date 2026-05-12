@@ -1,7 +1,5 @@
 """Two-Tower Recommender Model."""
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -106,7 +104,6 @@ class TwoTowerModel(nn.Module):
         pos_item_ids,
         neg_item_ids,
         neg_log_probs=None,
-        tau_plus=None,
     ):
         """Compute contrastive loss (InfoNCE / Sampled Softmax).
 
@@ -118,8 +115,6 @@ class TwoTowerModel(nn.Module):
                            Shape: (batch_size, num_neg). When provided, applies
                            logQ correction: logits -= log(Q(neg)) to debias
                            non-uniform sampling distributions.
-            tau_plus: Optional positive class prior for debiased contrastive loss.
-                      Corrects for false negatives among sampled negatives.
         """
         user_emb = self.get_user_embedding(user_ids)
         pos_item_emb = self.get_item_embedding(pos_item_ids)
@@ -134,16 +129,6 @@ class TwoTowerModel(nn.Module):
 
         if neg_log_probs is not None:
             neg_logits = neg_logits - neg_log_probs
-
-        if tau_plus is not None:
-            N = neg_logits.size(1)
-            neg_exp = torch.exp(neg_logits)
-            pos_exp = torch.exp(pos_logits)
-            neg_sum = neg_exp.sum(dim=1, keepdim=True)
-            debiased_neg = (neg_sum - N * tau_plus * pos_exp) / (1 - tau_plus)
-            debiased_neg = debiased_neg.clamp(min=N * math.exp(-1.0 / temp.item()))
-            loss = -torch.log(pos_exp / (pos_exp + debiased_neg) + 1e-8)
-            return loss.mean()
 
         logits = torch.cat([pos_logits, neg_logits], dim=-1)
         labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)

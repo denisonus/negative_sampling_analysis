@@ -22,7 +22,6 @@ Main knob sweeps:
 - hard-family candidate pool: `ml100k/44_ml100k_hard_pool_25.yaml`, `ml100k/43_ml100k_hard_pool_50.yaml`, `ml100k/45_ml100k_hard_pool_75.yaml`, `ml100k/10_ml100k_benchmark.yaml`, `ml100k/40_ml100k_hard_pool_200.yaml`
 - DNS temperature: `ml100k/10_ml100k_benchmark.yaml`, `ml100k/41_ml100k_dns_temp_0p20.yaml`
 - curriculum schedule: `ml100k/10_ml100k_benchmark.yaml`, `ml100k/42_ml100k_curriculum_gentle.yaml`
-- debiased `tau_plus`: `ml100k/10_ml100k_benchmark.yaml`, `ml100k/50_ml100k_debiased_tau_0p10.yaml`
 - in-batch batch size: `ml100k/10_ml100k_benchmark.yaml`, `ml100k/60_ml100k_inbatch_bs1024.yaml`
 - hard-uniform ratio: `ml100k/61_ml100k_hard_uniform_ratio_0p25.yaml`, `ml100k/10_ml100k_benchmark.yaml`, `ml100k/62_ml100k_hard_uniform_ratio_0p75.yaml`
 - in-batch + uniform index batch size: `ml100k/10_ml100k_benchmark.yaml`, `ml100k/72_ml100k_mns_index_768.yaml`, `ml100k/70_ml100k_mns_index_1024.yaml`, `ml100k/71_ml100k_mns_index_2048.yaml`
@@ -46,14 +45,13 @@ Numbering groups (same logic as ML-100K):
 - `2x` — negative count
 - `3x` — popularity / logQ
 - `4x` — hard / DNS / curriculum
-- `5x` — debiased
 - `6x` — ratio / mixed
 - `7x` — MNS (mixed in-batch + uniform index)
 
 Core benchmark:
 - `gowalla/10_benchmark.yaml`
 
-Paper-linked sweeps:
+Sweeps:
 - BPR/DNS-style single negative: `gowalla/20_neg1_bpr_like.yaml`
 - larger sampled-softmax negative set: `gowalla/21_neg10.yaml`
 - logQ correction: `gowalla/10_benchmark.yaml`, `gowalla/30_logq_off.yaml`
@@ -65,11 +63,4 @@ Paper-linked sweeps:
 - curriculum schedule: `gowalla/10_benchmark.yaml`, `gowalla/43_curriculum_gentle.yaml`
 - hard-uniform ratio: `gowalla/10_benchmark.yaml`, `gowalla/60_hard_uniform_ratio_0p75.yaml`
 - in-batch + uniform index size: `gowalla/10_benchmark.yaml`, `gowalla/70_mns_index_2048.yaml`
-- debiased `tau_plus`: `gowalla/10_benchmark.yaml`, `gowalla/50_debiased_tau_0p10.yaml`
 
-Suggested limited-time order:
-- Run the benchmark once with all strategies.
-- If time is tight after that, prioritize `gowalla/30_logq_off.yaml`, `gowalla/40_hard_pool_100.yaml`, `gowalla/41_hard_pool_600.yaml`, `gowalla/42_dns_temp_0p20.yaml`, and `gowalla/70_mns_index_2048.yaml`.
-- For sweep configs, pass only the affected strategy family, for example
-  `--strategies hard dns curriculum` for candidate-pool configs, `--strategies
-  popularity` for smoothing, and `--strategies mixed_in_batch_uniform` for MNS.

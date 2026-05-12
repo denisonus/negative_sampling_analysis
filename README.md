@@ -17,7 +17,6 @@ Supported strategies:
 - `in_batch`
 - `dns`
 - `curriculum`
-- `debiased`
 
 Supported datasets:
 - `ml-100k`

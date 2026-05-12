@@ -9,7 +9,6 @@ from .mixed_in_batch_uniform import MixedInBatchUniformNegativeSampler
 from .in_batch import InBatchNegativeSampler
 from .dns import DNSNegativeSampler
 from .curriculum import CurriculumNegativeSampler
-from .debiased import DebiasedNegativeSampler
 
 from .factory import get_sampler
 
@@ -24,7 +23,6 @@ __all__ = [
     "InBatchNegativeSampler",
     "DNSNegativeSampler",
     "CurriculumNegativeSampler",
-    "DebiasedNegativeSampler",
     "EmbeddingModel",
     "get_sampler",
 ]

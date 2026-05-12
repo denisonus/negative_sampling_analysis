@@ -25,7 +25,6 @@ COMMON_DEFAULTS = {
     "curriculum_start_ratio": 0.0,
     "curriculum_end_ratio": 0.8,
     "curriculum_warmup_epochs": 8,
-    "tau_plus": 0.05,
     "smoothing": 0.75,
     "logq_correction": True,
     "mixed_index_batch_size": 512,
