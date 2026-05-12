@@ -29,7 +29,6 @@ DEFAULT_QUALITY_METRICS = [
     "personalization@10",
     "personalization@20",
 ]
-SUMMARY_OPTIONAL_RELEVANCE_METRICS = []
 
 def load_results(results_file):
     with open(results_file, "r") as f:
@@ -71,7 +70,6 @@ def _available_metric_family(stats_data, metric_base, section="metrics"):
             _metric_k(metric) if _metric_k(metric) is not None else metric,
         ),
     )
-
 
 def _preferred_metric(stats_data, metric_base="ndcg", section="metrics", preferred_ks=(10, 20, 50, 5)):
     metrics = _available_metric_family(stats_data, metric_base, section=section)
@@ -171,12 +169,6 @@ def _available_bucket_metrics(stats_data, candidates):
     ]
 
 
-def _title_suffix_from_metadata(metadata):
-    """Build a concise title suffix for per-run reports."""
-    return ""
-
-
-
 def _sort_param_value(value):
     if isinstance(value, bool):
         return (0, int(value))
@@ -195,6 +187,3 @@ def _load_metadata_for_results(results_file):
         return {}
     with open(metadata_path, "r") as metadata_file:
         return json.load(metadata_file)
-
-
-

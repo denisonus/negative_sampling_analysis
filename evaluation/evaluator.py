@@ -115,19 +115,11 @@ class Evaluator:
         return np.asarray(metric_values, dtype=np.float64)
 
     def _extract_interactions(self, test_data):
-        """Extract user-item interactions from test data."""
-        test_user_items = defaultdict(set)
+        test_user_items = {}
         uid2pos = test_data.uid2positive_item
-        uid_list = test_data.uid_list.numpy()
 
-        for uid in uid_list:
-            pos_items = uid2pos[uid]
-            if hasattr(pos_items, "tolist"):
-                test_user_items[int(uid)] = set(pos_items.tolist())
-            elif hasattr(pos_items, "__iter__"):
-                test_user_items[int(uid)] = set(int(i) for i in pos_items)
-            else:
-                test_user_items[int(uid)] = {int(pos_items)}
+        for uid in test_data.uid_list.numpy():
+            test_user_items[int(uid)] = set(uid2pos[uid].tolist())
 
         return test_user_items
 

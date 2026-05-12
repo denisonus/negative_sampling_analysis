@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from .common import (
     _load_metadata_for_results,
     _preferred_metric,
-    _title_suffix_from_metadata,
     load_results,
 )
 from .plots import (
@@ -38,7 +37,6 @@ def generate_full_report(results_file, output_dir=None):
 
     results = load_results(results_file)
     metadata = _load_metadata_for_results(results_file)
-    title_suffix = _title_suffix_from_metadata(metadata)
     stats = results.get("statistics", {})
     primary_metric = _preferred_metric(stats, metric_base="ndcg")
     primary_metric_file_label = primary_metric.replace("@", "")
@@ -55,12 +53,10 @@ def generate_full_report(results_file, output_dir=None):
     plot_thesis_dashboard(
         results,
         output_path=os.path.join(output_dir, "dashboard.png"),
-        title_suffix=title_suffix,
     )
     plot_metric_by_k(
         results,
         output_path=os.path.join(output_dir, "metric_by_k.png"),
-        title_suffix=title_suffix,
     )
 
     has_quality_metrics = any(
@@ -70,7 +66,6 @@ def generate_full_report(results_file, output_dir=None):
         plot_quality_small_multiples(
             results,
             output_path=os.path.join(output_dir, "quality_metrics.png"),
-            title_suffix=title_suffix,
         )
 
     has_bucket_metrics = any(
@@ -87,7 +82,6 @@ def generate_full_report(results_file, output_dir=None):
             output_path=os.path.join(
                 output_dir, f"user_bucket_{primary_metric_file_label}_delta_grid.png"
             ),
-            title_suffix=title_suffix,
         )
 
     if "uniform" in stats:
@@ -98,7 +92,6 @@ def generate_full_report(results_file, output_dir=None):
             output_path=os.path.join(
                 output_dir, f"{primary_metric_file_label}_delta_vs_uniform.png"
             ),
-            title_suffix=title_suffix,
         )
 
     if "raw_results" in results:
@@ -106,7 +99,6 @@ def generate_full_report(results_file, output_dir=None):
             results,
             target_metric=primary_metric,
             output_path=os.path.join(output_dir, "training_dynamics.png"),
-            title_suffix=title_suffix,
         )
 
     save_significance_table(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -165,11 +166,11 @@ def _split_counts(total: int, ratios=SPLIT_RATIOS) -> list[int]:
     counts = [int(ratio * total) for ratio in normalized]
     counts[0] = total - sum(counts[1:])
 
+    # Give tiny non-train splits one item when train can spare it.
     for index in range(1, len(normalized)):
         if counts[0] <= 1:
             break
-        ratio = normalized[-index]
-        if 0 < ratio * total < 1:
+        if 0 < normalized[-index] * total < 1:
             counts[-index] += 1
             counts[0] -= 1
 
@@ -239,26 +240,13 @@ def _split_gowalla_user_items(
         return list(item_ids), [], []
 
     shuffled = list(item_ids)
-    import random
-
     random.Random(seed + user_id).shuffle(shuffled)
     total = len(shuffled)
     valid_count = max(1, int(round(total * split[1])))
     test_count = max(1, int(round(total * split[2])))
-
-    if valid_count + test_count >= total:
-        overflow = valid_count + test_count - (total - 1)
-        reduce_valid = min(valid_count, overflow)
-        valid_count -= reduce_valid
-        overflow -= reduce_valid
-        test_count = max(1, test_count - overflow)
-
-    train_count = total - valid_count - test_count
-    if train_count < 1:
-        train_count = 1
-        available = total - train_count
-        test_count = min(test_count, available)
-        valid_count = max(0, available - test_count)
+    train_count = max(1, total - valid_count - test_count)
+    valid_count = min(valid_count, total - train_count)
+    test_count = total - train_count - valid_count
 
     return (
         shuffled[:train_count],

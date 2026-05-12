@@ -1,8 +1,7 @@
 """Softmax-based dynamic negative sampling."""
 
 import torch
-import numpy as np
-from typing import Set, Dict, Optional
+from typing import Dict, Optional, Set
 
 from .base import NegativeSampler, Device
 from .hard import EmbeddingModel
@@ -27,10 +26,6 @@ class DNSNegativeSampler(NegativeSampler):
         self.candidate_pool_size = candidate_pool_size
         self.temperature = temperature
 
-        self._positives_array: Dict[int, np.ndarray] = {}
-        for user_id, items in user_item_dict.items():
-            self._positives_array[user_id] = np.array(list(items), dtype=np.int64)
-
     def set_model(self, model: EmbeddingModel) -> None:
         """Set the model for computing embeddings."""
         self.model = model
@@ -43,7 +38,11 @@ class DNSNegativeSampler(NegativeSampler):
 
         batch_size = user_ids.size(0)
 
-        all_candidates = self._sample_candidate_pools_batch(user_ids)
+        all_candidates = self._sample_candidate_pools_batch(
+            user_ids,
+            self.candidate_pool_size,
+            oversample=self.candidate_pool_size * 3,
+        )
 
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
@@ -61,27 +60,3 @@ class DNSNegativeSampler(NegativeSampler):
             neg_items = torch.gather(all_candidates, 1, sampled_indices)
 
         return neg_items
-
-    def _sample_candidate_pools_batch(self, user_ids: torch.Tensor) -> torch.Tensor:
-        """Sample candidate pools for all users in batch."""
-        batch_size = user_ids.size(0)
-        user_ids_np = user_ids.cpu().numpy()
-
-        oversample_factor = 3
-        total_needed = self.candidate_pool_size * oversample_factor
-
-        all_candidates = np.random.randint(
-            0, self.num_items, size=(batch_size, total_needed), dtype=np.int64
-        )
-
-        result = np.zeros((batch_size, self.candidate_pool_size), dtype=np.int64)
-
-        for i in range(batch_size):
-            user_id = user_ids_np[i]
-            positives = self._positives_array.get(user_id)
-            positives_set = set() if positives is None else set(positives.tolist())
-            result[i] = self._sample_unique_valid_items(
-                all_candidates[i], positives_set, self.candidate_pool_size
-            )
-
-        return torch.from_numpy(result).to(self.device)

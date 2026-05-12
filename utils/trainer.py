@@ -2,6 +2,7 @@
 
 import torch
 import torch.optim as optim
+import numpy as np
 import time
 from typing import Any, Union
 from tqdm import tqdm
@@ -231,8 +232,6 @@ class InBatchTrainer(Trainer):
         self.logq_correction = config["logq_correction"]
         self._log_q = None
         if self.logq_correction and item_popularity is not None:
-            import numpy as np
-
             freq = np.array(item_popularity, dtype=np.float64)
             prob = freq / freq.sum()
             self._log_q = torch.from_numpy(np.log(prob + 1e-10)).float().to(device)

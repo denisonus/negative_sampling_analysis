@@ -1,8 +1,7 @@
 """Hard negative mining."""
 
 import torch
-import numpy as np
-from typing import Set, Dict, Optional, Protocol, runtime_checkable
+from typing import Dict, Optional, Protocol, Set, runtime_checkable
 
 from .base import NegativeSampler, Device
 
@@ -47,7 +46,9 @@ class HardNegativeSampler(NegativeSampler):
             batch_size, self.num_neg_samples, dtype=torch.long, device=self.device
         )
 
-        all_candidates, valid_counts = self._sample_candidate_pools_batch(user_ids)
+        all_candidates = self._sample_candidate_pools_batch(
+            user_ids, self.candidate_pool_size
+        )
 
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
@@ -63,24 +64,3 @@ class HardNegativeSampler(NegativeSampler):
             neg_items[:, :k] = torch.gather(all_candidates, 1, top_indices)
 
         return neg_items
-
-    def _sample_candidate_pools_batch(self, user_ids: torch.Tensor) -> tuple:
-        """Sample candidate pools for all users in batch."""
-        batch_size = user_ids.size(0)
-        oversample = self.candidate_pool_size + 50
-        candidates = np.random.randint(0, self.num_items, size=(batch_size, oversample))
-
-        result = np.zeros((batch_size, self.candidate_pool_size), dtype=np.int64)
-        valid_counts = np.zeros(batch_size, dtype=np.int64)
-        user_ids_np = user_ids.cpu().numpy()
-
-        for i in range(batch_size):
-            positives = self._get_positives(user_ids_np[i])
-            unique_candidates = self._sample_unique_valid_items(
-                candidates[i], positives, self.candidate_pool_size
-            )
-            count = len(unique_candidates)
-            result[i, :count] = unique_candidates
-            valid_counts[i] = count
-
-        return torch.from_numpy(result).to(self.device), valid_counts

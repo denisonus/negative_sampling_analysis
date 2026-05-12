@@ -10,6 +10,7 @@ import torch
 import numpy as np
 import random
 import argparse
+import traceback
 import warnings
 from datetime import datetime
 from models import TwoTowerModel
@@ -50,8 +51,10 @@ def _primary_k(config):
 
 def _metrics_to_show(config):
     k = _primary_k(config)
-    metrics = [f"ndcg@{k}", f"recall@{k}", "recall@20", f"mrr@{k}", f"hit@{k}"]
-    return list(dict.fromkeys(metrics))
+    metrics = [f"ndcg@{k}", f"recall@{k}", f"mrr@{k}", f"hit@{k}"]
+    if k != 20:
+        metrics.insert(2, "recall@20")
+    return metrics
 
 
 def _quality_metrics_to_show(config):
@@ -313,8 +316,6 @@ def run_all_experiments(config, strategies=None, num_runs=1):
                 all_results[strategy].append(result)
             except Exception as e:
                 print(f"Error running {strategy} with seed {seed}: {e}")
-                import traceback
-
                 traceback.print_exc()
             finally:
                 cleanup_device(device)

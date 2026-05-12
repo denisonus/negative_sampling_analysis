@@ -2,7 +2,7 @@
 
 import torch
 import numpy as np
-from typing import Set, Dict, Optional
+from typing import Dict, Optional, Set
 
 from .base import NegativeSampler, Device
 from .uniform import UniformNegativeSampler
@@ -102,7 +102,9 @@ class CurriculumNegativeSampler(NegativeSampler):
 
         assert self.model is not None
 
-        all_candidates = self._sample_candidate_pools_batch(user_ids)
+        all_candidates = self._sample_candidate_pools_batch(
+            user_ids, self.candidate_pool_size
+        )
 
         with torch.no_grad():
             user_emb = self.model.get_user_embedding(user_ids)
@@ -118,20 +120,3 @@ class CurriculumNegativeSampler(NegativeSampler):
             neg_items[:, :k] = torch.gather(all_candidates, 1, top_indices)
 
         return neg_items
-
-    def _sample_candidate_pools_batch(self, user_ids: torch.Tensor) -> torch.Tensor:
-        """Sample candidate pools for all users in batch."""
-        batch_size = user_ids.size(0)
-        oversample = self.candidate_pool_size + 50
-        candidates = np.random.randint(0, self.num_items, size=(batch_size, oversample))
-
-        result = np.zeros((batch_size, self.candidate_pool_size), dtype=np.int64)
-        user_ids_np = user_ids.cpu().numpy()
-
-        for i in range(batch_size):
-            positives = self._get_positives(user_ids_np[i])
-            result[i] = self._sample_unique_valid_items(
-                candidates[i], positives, self.candidate_pool_size
-            )
-
-        return torch.from_numpy(result).to(self.device)

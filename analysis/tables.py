@@ -9,7 +9,6 @@ from .common import (
     DEFAULT_BUCKET_METRICS,
     DEFAULT_QUALITY_METRICS,
     DEFAULT_RELEVANCE_METRICS,
-    SUMMARY_OPTIONAL_RELEVANCE_METRICS,
     _available_bucket_metrics,
     _available_metrics,
     _collect_bucket_labels,
@@ -73,7 +72,6 @@ def save_summary_table(results, output_path, metadata=None):
             "mrr@20",
             "hit@10",
             "hit@20",
-            *SUMMARY_OPTIONAL_RELEVANCE_METRICS,
         ],
         section="metrics",
     )
@@ -130,8 +128,7 @@ def _relative_metric_specs(stats_data, metrics=None):
                 specs.append(("quality", "quality_metrics", metric))
         return specs
 
-    all_relevance = [*DEFAULT_RELEVANCE_METRICS, *SUMMARY_OPTIONAL_RELEVANCE_METRICS]
-    relevance = _available_metrics(stats_data, all_relevance)
+    relevance = _available_metrics(stats_data, DEFAULT_RELEVANCE_METRICS)
     quality = _available_metrics(stats_data, DEFAULT_QUALITY_METRICS, section="quality_metrics")
     return [
         *[("relevance", "metrics", m) for m in relevance],

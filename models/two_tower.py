@@ -1,5 +1,7 @@
 """Two-Tower Recommender Model."""
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,9 +21,8 @@ class Tower(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(input_dim, embedding_size)
 
-        input_size = embedding_size
         layers = []
-        in_size = input_size
+        in_size = embedding_size
         for _ in range(num_layers):
             layers.extend(
                 [nn.Linear(in_size, hidden_size), nn.ReLU(), nn.Dropout(dropout)]
@@ -140,10 +141,7 @@ class TwoTowerModel(nn.Module):
             pos_exp = torch.exp(pos_logits)
             neg_sum = neg_exp.sum(dim=1, keepdim=True)
             debiased_neg = (neg_sum - N * tau_plus * pos_exp) / (1 - tau_plus)
-            debiased_neg = debiased_neg.clamp(
-                min=N
-                * torch.exp(torch.tensor(-1.0 / temp.item(), device=neg_logits.device))
-            )
+            debiased_neg = debiased_neg.clamp(min=N * math.exp(-1.0 / temp.item()))
             loss = -torch.log(pos_exp / (pos_exp + debiased_neg) + 1e-8)
             return loss.mean()
 

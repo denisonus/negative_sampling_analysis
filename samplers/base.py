@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
-from typing import Set, Dict, Union, Any, Optional
+from typing import Any, Dict, Optional, Set, Union
 from dataclasses import dataclass
 
 Device = Union[str, torch.device]
@@ -93,6 +93,27 @@ class NegativeSampler(ABC):
                 chosen.append(item)
 
         return np.array(chosen, dtype=np.int64)
+
+    def _sample_candidate_pools_batch(
+        self, user_ids: torch.Tensor, pool_size: int, oversample: Optional[int] = None
+    ) -> torch.Tensor:
+        """Sample candidate negative-item pools for all users in a batch."""
+        batch_size = user_ids.size(0)
+        oversample = pool_size + 50 if oversample is None else oversample
+        candidates = np.random.randint(
+            0, self.num_items, size=(batch_size, oversample)
+        )
+
+        result = np.zeros((batch_size, pool_size), dtype=np.int64)
+        user_ids_np = user_ids.cpu().numpy()
+
+        for i in range(batch_size):
+            positives = self._get_positives(user_ids_np[i])
+            result[i] = self._sample_unique_valid_items(
+                candidates[i], positives, pool_size
+            )
+
+        return torch.from_numpy(result).to(self.device)
 
     def _split_negative_budget(self, primary_ratio: float) -> tuple[int, int]:
         """Split the negative budget while preserving fractional ratios in expectation.
